@@ -31,7 +31,12 @@
           </div>
           <div class="header-actions">
             <button id="seedButton" class="secondary-btn" type="button">お試しデータを入れる</button>
-            <button id="resetButton" class="danger-btn" type="button">すべて削除</button>
+            <details class="header-menu">
+              <summary class="ghost-btn">データ管理</summary>
+              <div class="header-menu-panel">
+                <button id="resetButton" class="ghost-btn subtle-danger" type="button">すべて削除</button>
+              </div>
+            </details>
           </div>
         </header>
         <section id="app" class="page-body"></section>
