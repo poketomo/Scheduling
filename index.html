@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>日程調整アプリ MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>日程調整</h1>
+          <p>講師・生徒マッチング</p>
+        </div>
+        <nav id="navTabs" class="nav-tabs"></nav>
+        <section class="sidebar-panel">
+          <h2>保存状態</h2>
+          <div id="saveStatus" class="save-status"></div>
+        </section>
+        <section class="sidebar-panel">
+          <h2>概要</h2>
+          <dl id="summaryStats" class="stats-list"></dl>
+        </section>
+      </aside>
+      <main class="main">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Admin MVP</p>
+            <h2 id="pageTitle">講師一覧</h2>
+          </div>
+          <div class="header-actions">
+            <button id="seedButton" class="secondary-btn" type="button">サンプル投入</button>
+            <button id="resetButton" class="danger-btn" type="button">データ初期化</button>
+          </div>
+        </header>
+        <section id="app" class="page-body"></section>
+      </main>
+    </div>
+    <template id="modalTemplate">
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-header">
+            <h3 class="modal-title"></h3>
+            <button class="icon-btn modal-close" type="button" aria-label="閉じる">×</button>
+          </div>
+          <div class="modal-content"></div>
+        </div>
+      </div>
+    </template>
+    <script src="./app.js"></script>
+  </body>
+</html>
