@@ -1,0 +1,8 @@
+{
+  "name": "scheduling-mvp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/scheduler.test.js"
+  }
+}
