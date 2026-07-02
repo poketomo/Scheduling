@@ -288,7 +288,7 @@ function renderGeneratorPage() {
         <div class="panel-header panel-header-inline">
           <div>
             <h3>準備チェック</h3>
-            <p class="section-copy">足りない項目があるときは、次にやることをここで確認できます。</p>
+            <p class="section-copy">足りない項目があるときは、次にやることをここで確認できます。${dateSchedulingModeLabel()}</p>
           </div>
           <button class="primary-btn" type="button" data-action="generate-schedule" ${canGenerate ? "" : "disabled"}>日程案を作成</button>
         </div>
@@ -778,7 +778,7 @@ function renderSolutionDetail(solution) {
           </header>
           <div class="lesson-request-meta">
             <span class="tag">${escapeHtml(teacherName(assignment.teacherId))}</span>
-            <span class="tag">${escapeHtml(slotLabel(assignment.timeSlotId))}</span>
+            <span class="tag">${escapeHtml(assignmentTimeLabel(assignment))}</span>
             ${assignment.isLocked ? `<span class="tag">固定</span>` : ""}
           </div>
           <div class="muted">${(assignment.scoreBreakdownJson || []).map((item) => `${item.label}: ${item.value}`).join(" / ")}</div>
@@ -825,7 +825,7 @@ function renderSolutionDetail(solution) {
             <tr>
               <td>${escapeHtml(studentName(assignment.studentId))}</td>
               <td>${escapeHtml(teacherName(assignment.teacherId))}</td>
-              <td>${escapeHtml(slotLabel(assignment.timeSlotId))}</td>
+              <td>${escapeHtml(assignmentTimeLabel(assignment))}</td>
               <td>${escapeHtml(subjectName(assignment.subjectId))}</td>
               <td>${assignment.score}</td>
               <td>${(assignment.scoreBreakdownJson || []).map((item) => `${escapeHtml(item.label)}: ${item.value}`).join("<br>")}</td>
@@ -843,6 +843,25 @@ function renderSolutionDetail(solution) {
 }
 
 function renderAssignmentMatrix(assignments) {
+  if (assignments.some((item) => item.date)) {
+    const grouped = [...assignments].sort((a, b) =>
+      String(a.date || "").localeCompare(String(b.date || "")) ||
+      slotTimeLabel(a.lessonTimeSlotId || a.timeSlotId).localeCompare(slotTimeLabel(b.lessonTimeSlotId || b.timeSlotId)) ||
+      teacherName(a.teacherId).localeCompare(teacherName(b.teacherId))
+    );
+    return `
+      <table class="matrix-table">
+        <thead><tr><th>日付</th><th>時間帯</th><th>割当</th></tr></thead>
+        <tbody>${grouped.map((item) => `
+          <tr>
+            <td>${escapeHtml(formatDateDisplay(item.date))}</td>
+            <td>${escapeHtml(slotTimeLabel(item.lessonTimeSlotId || item.timeSlotId))}</td>
+            <td>${escapeHtml(teacherName(item.teacherId))}: ${escapeHtml(studentName(item.studentId))}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    `;
+  }
   const grouped = {};
   assignments.forEach((item) => {
     grouped[item.timeSlotId] = grouped[item.timeSlotId] || [];
@@ -1201,6 +1220,16 @@ function studentDateAvailabilityDayCount() {
   return new Set((db.studentDateAvailability || []).map((item) => item.date)).size;
 }
 
+function hasDateBasedAvailability() {
+  return (db.teacherDateAvailability?.length || 0) > 0 && (db.studentDateAvailability?.length || 0) > 0;
+}
+
+function dateSchedulingModeLabel() {
+  if (hasDateBasedAvailability()) return "カレンダーで設定した授業できる時間を使って日程案を作成します。";
+  if ((db.teacherDateAvailability?.length || 0) > 0 || (db.studentDateAvailability?.length || 0) > 0) return "授業できる日付がまだ片側だけです。そろうとカレンダー入力を使って作成できます。";
+  return "授業できる日付が未設定のときは、現在の曜日ごとの時間を使って作成します。";
+}
+
 function addCurrentAssignment(teacherId) {
   const studentId = document.getElementById("currentAssignmentStudent").value;
   const timeSlotId = document.getElementById("currentAssignmentSlot").value;
@@ -1392,24 +1421,35 @@ function openMoveAssignmentModal(assignmentId, solutionId) {
   const assignment = db.scheduleAssignments.find((item) => item.id === assignmentId);
   if (!assignment) return;
   const solutionAssignments = scheduleAssignmentsForSolution(solutionId).filter((item) => item.id !== assignmentId);
-  const options = activeSlots().filter((slot) => slot.id !== assignment.timeSlotId).filter((slot) => {
-    if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id)) return false;
-    if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
-    if (solutionAssignments.filter((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id).length >= 3) return false;
-    if (solutionAssignments.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
-    return true;
-  });
+  const options = assignment.date
+    ? lessonTimeSlotOptions()
+      .filter((slot) => slot.id !== (assignment.lessonTimeSlotId || assignment.timeSlotId))
+      .filter((slot) => {
+        if (!db.teacherDateAvailability.some((item) => item.teacherId === assignment.teacherId && item.date === assignment.date && item.lessonTimeSlotId === slot.id)) return false;
+        if (!db.studentDateAvailability.some((item) => item.studentId === assignment.studentId && item.date === assignment.date && item.lessonTimeSlotId === slot.id)) return false;
+        if (solutionAssignments.filter((item) => item.teacherId === assignment.teacherId && item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === slot.id).length >= 3) return false;
+        if (solutionAssignments.some((item) => item.studentId === assignment.studentId && item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === slot.id)) return false;
+        return true;
+      })
+    : activeSlots().filter((slot) => slot.id !== assignment.timeSlotId).filter((slot) => {
+      if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id)) return false;
+      if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
+      if (solutionAssignments.filter((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id).length >= 3) return false;
+      if (solutionAssignments.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
+      return true;
+    });
   if (!options.length) return window.alert("移動可能な別枠がありません。");
   openModal("生徒を別枠に移動", `
     <form id="moveAssignmentForm" class="stack">
       <input type="hidden" name="assignmentId" value="${assignment.id}" />
-      <label class="field"><span>移動先時間帯</span><select name="timeSlotId">${options.map((slot) => `<option value="${slot.id}">${escapeHtml(slot.label)}</option>`).join("")}</select></label>
+      <label class="field"><span>移動先時間帯</span><select name="timeSlotId">${options.map((slot) => `<option value="${slot.id}">${escapeHtml(slot.label || slotTimeLabel(slot.id))}</option>`).join("")}</select></label>
       <button class="primary-btn" type="submit">反映</button>
     </form>
   `, () => {
     document.getElementById("moveAssignmentForm").addEventListener("submit", (event) => {
       event.preventDefault();
       assignment.timeSlotId = String(new FormData(event.currentTarget).get("timeSlotId"));
+      assignment.lessonTimeSlotId = assignment.timeSlotId;
       assignment.isLocked = true;
       persist();
       closeModal();
@@ -1424,7 +1464,19 @@ function openChangeTeacherModal(assignmentId, solutionId) {
   if (!assignment) return;
   const blocked = db.studentTeacherPreferences.filter((item) => item.studentId === assignment.studentId && item.preferenceType === "blocked").map((item) => item.teacherId);
   const solutionAssignments = scheduleAssignmentsForSolution(solutionId).filter((item) => item.id !== assignmentId);
-  const options = db.teachers.filter((teacher) => teacher.id !== assignment.teacherId).filter((teacher) => !blocked.includes(teacher.id)).filter((teacher) => db.teacherSubjects.some((item) => item.teacherId === teacher.id && item.subjectId === assignment.subjectId)).filter((teacher) => db.teacherAvailabilitySlots.some((item) => item.teacherId === teacher.id && item.timeSlotId === assignment.timeSlotId)).filter((teacher) => solutionAssignments.filter((item) => item.teacherId === teacher.id && item.timeSlotId === assignment.timeSlotId).length < 3);
+  const options = db.teachers
+    .filter((teacher) => teacher.id !== assignment.teacherId)
+    .filter((teacher) => !blocked.includes(teacher.id))
+    .filter((teacher) => db.teacherSubjects.some((item) => item.teacherId === teacher.id && item.subjectId === assignment.subjectId))
+    .filter((teacher) => assignment.date
+      ? db.teacherDateAvailability.some((item) => item.teacherId === teacher.id && item.date === assignment.date && item.lessonTimeSlotId === (assignment.lessonTimeSlotId || assignment.timeSlotId))
+      : db.teacherAvailabilitySlots.some((item) => item.teacherId === teacher.id && item.timeSlotId === assignment.timeSlotId))
+    .filter((teacher) => solutionAssignments.filter((item) =>
+      item.teacherId === teacher.id &&
+      (assignment.date
+        ? item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === (assignment.lessonTimeSlotId || assignment.timeSlotId)
+        : item.timeSlotId === assignment.timeSlotId)
+    ).length < 3);
   if (!options.length) return window.alert("変更可能な講師候補がありません。");
   openModal("講師を変更", `
     <form id="changeTeacherForm" class="stack">
@@ -1915,12 +1967,20 @@ function pageLeadForTab(tabId) {
 }
 
 function buildStepStatuses() {
-  const teacherReady = db.teachers.length > 0 && db.teachers.every((teacher) => String(teacher.name || "").trim() && teacherSubjectIds(teacher.id).length && getAvailability("teacher", teacher.id).length);
+  const teacherReady = db.teachers.length > 0 && db.teachers.every((teacher) =>
+    String(teacher.name || "").trim() &&
+    teacherSubjectIds(teacher.id).length &&
+    (hasDateBasedAvailability()
+      ? getDateAvailability("teacher", teacher.id).length
+      : getAvailability("teacher", teacher.id).length)
+  );
   const studentReady = db.students.length > 0 && db.students.every((student) => {
     if (!String(student.name || "").trim()) return false;
     const hasActiveRequests = lessonRequestsForStudent(student.id).some((item) => item.status !== "inactive");
     if (!hasActiveRequests) return true;
-    return getAvailability("student", student.id).length > 0;
+    return hasDateBasedAvailability()
+      ? getDateAvailability("student", student.id).length > 0
+      : getAvailability("student", student.id).length > 0;
   });
   const slotReady = activeSlots().length > 0;
   const generatorIssues = generatorChecklist().filter((item) => !item.done).length;
@@ -1939,7 +1999,16 @@ function generatorChecklist() {
     { label: "生徒が登録されている", done: db.students.length > 0, success: `${db.students.length}人登録済みです。`, hint: "生徒画面で、まず1人追加してください。" },
     { label: "授業希望が登録されている", done: db.lessonRequests.some((item) => item.status !== "inactive"), success: "有効な授業希望があります。", hint: "生徒ごとに教科と回数を追加してください。" },
     { label: "授業時間が設定されている", done: activeSlots().length > 0, success: `${activeSlots().length}枠あります。`, hint: "授業時間画面で時間帯を追加してください。" },
-    { label: "可能時間が入力されている", done: db.teacherAvailabilitySlots.length > 0 && db.studentAvailabilitySlots.length > 0, success: "講師・生徒ともに時間が入力されています。", hint: "講師と生徒の両方で、授業できる時間を選んでください。" }
+    {
+      label: hasDateBasedAvailability() ? "授業できる日付が入力されている" : "可能時間が入力されている",
+      done: hasDateBasedAvailability()
+        ? db.teacherDateAvailability.length > 0 && db.studentDateAvailability.length > 0
+        : db.teacherAvailabilitySlots.length > 0 && db.studentAvailabilitySlots.length > 0,
+      success: hasDateBasedAvailability() ? "講師・生徒ともに授業可能日が入力されています。" : "講師・生徒ともに時間が入力されています。",
+      hint: hasDateBasedAvailability()
+        ? "講師と生徒の両方で、カレンダーに授業できる日付を追加してください。"
+        : "講師と生徒の両方で、授業できる時間を選んでください。"
+    }
   ];
 }
 
@@ -1949,6 +2018,7 @@ function humanizeIssue(issue) {
   if (text.includes("講師が未登録") || text.includes("講師がまだ登録")) return "講師を1人以上登録してください。";
   if (text.includes("生徒が未登録") || text.includes("生徒がまだ登録")) return "生徒を1人以上登録してください。";
   if (text.includes("可能時間")) return "授業できる時間が不足しています。講師と生徒の両方で時間を選んでください。";
+  if (text.includes("授業可能日")) return "カレンダーで設定した授業できる日付に不足や不整合があります。日付と時間帯を見直してください。";
   if (text.includes("対応教科")) return "担当教科が未設定の講師がいます。教科を選んでください。";
   if (text.includes("studentAvailabilitySlots")) return "古い生徒データに紐づいた可能時間が残っています。整理または初期化が必要です。";
   if (text.includes("teacherAvailabilitySlots")) return "古い講師データに紐づいた可能時間が残っています。整理または初期化が必要です。";
@@ -2021,12 +2091,16 @@ function renderUnassignedCards(unassigned) {
 function unassignedHint(code) {
   const hintMap = {
     NO_STUDENT_AVAILABILITY: "生徒の通える時間を少し広げると候補が見つかりやすくなります。",
+    NO_STUDENT_DATE_AVAILABILITY: "生徒の通える日付と時間帯をカレンダーで追加してください。",
+    NO_TEACHER_DATE_AVAILABILITY: "講師側の授業可能日をカレンダーで増やすと候補が見つかりやすくなります。",
     NO_SUBJECT_REQUEST: "授業希望カードに教科が入っているか確認してください。",
     NO_TEACHER_FOR_SUBJECT: "この教科を担当できる講師を追加するか、担当教科を見直してください。",
     NO_COMMON_TIME_SLOT: "講師と生徒のどちらかの可能時間を広げると改善することがあります。",
+    NO_COMMON_DATE_SLOT: "講師と生徒の授業可能日が重なる日時を増やしてみてください。",
     ONLY_BLOCKED_TEACHERS_AVAILABLE: "NG講師の条件が厳しすぎないか見直してください。",
     TEACHER_SLOT_CAPACITY_FULL: "別の時間帯を増やすか、講師を追加してください。",
     STUDENT_TIME_CONFLICT: "同じ生徒の別授業と重なっています。時間をずらしてみてください。",
+    CONFIRMED_ASSIGNMENT_CONFLICT: "すでに確定している授業と重なっています。確定済みの予定も確認してください。",
     LOCKED_ASSIGNMENT_CONFLICT: "固定している予定を一部だけ見直すと解決することがあります。"
   };
   return hintMap[code] || "条件を少し広げると候補が見つかることがあります。";
@@ -2188,6 +2262,18 @@ function slotLabel(id) {
   const slot = db.timeSlots.find((item) => item.id === id);
   if (!slot) return "未設定";
   return `${weekdays[(slot.dayOfWeek || 1) - 1]} ${slot.startTime}-${slot.endTime}`;
+}
+
+function assignmentTimeLabel(assignment) {
+  if (assignment?.date) return `${formatDateDisplay(assignment.date)} ${slotTimeLabel(assignment.lessonTimeSlotId || assignment.timeSlotId)}`;
+  return slotLabel(assignment?.timeSlotId);
+}
+
+function formatDateDisplay(dateKey) {
+  if (!dateKey) return "未設定";
+  const date = new Date(`${dateKey}T00:00:00`);
+  const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+  return `${date.getMonth() + 1}/${date.getDate()} ${dayNames[date.getDay()]}`;
 }
 
 function genderLabel(value) {

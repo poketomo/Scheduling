@@ -53,7 +53,9 @@ export function scoreSupportLevelBalance(db, assignmentGroup) {
 
 export function scoreSameRequestSpread(requestAssignments, candidate) {
   if (!requestAssignments.length) return 0;
-  const sameDay = requestAssignments.some((assignment) => assignment.dayOfWeek === candidate.dayOfWeek);
+  const sameDay = candidate.date
+    ? requestAssignments.some((assignment) => assignment.date === candidate.date)
+    : requestAssignments.some((assignment) => assignment.dayOfWeek === candidate.dayOfWeek);
   return sameDay ? scoreWeights.sameDayRepeatPenalty : scoreWeights.splitDayBonus;
 }
 

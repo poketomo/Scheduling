@@ -22,13 +22,19 @@ export function validateDb(db) {
 export function generatorReadiness(db) {
   const issues = [];
   const activeRequestStudentIds = new Set(db.lessonRequests.filter((request) => request.status === "active").map((request) => request.studentId));
+  const hasDateAvailability = (db.teacherDateAvailability?.length || 0) > 0 && (db.studentDateAvailability?.length || 0) > 0;
   if (!db.timeSlots.some((slot) => slot.isActive)) issues.push("有効な時間割スロットがありません。");
   if (!db.teachers.length) issues.push("講師が未登録です。");
   if (!db.students.length) issues.push("生徒が未登録です。");
   if (db.teachers.some((teacher) => !String(teacher.name || "").trim())) issues.push("名前未入力の講師がいます。");
   if (db.students.some((student) => !String(student.name || "").trim())) issues.push("名前未入力の生徒がいます。");
   if (db.teachers.some((teacher) => !db.teacherSubjects.some((item) => item.teacherId === teacher.id))) issues.push("対応教科未設定の講師がいます。");
-  if ([...activeRequestStudentIds].some((studentId) => !db.studentAvailabilitySlots.some((item) => item.studentId === studentId))) issues.push("可能時間未設定の生徒がいます。");
+  if (hasDateAvailability) {
+    if ([...activeRequestStudentIds].some((studentId) => !db.studentDateAvailability.some((item) => item.studentId === studentId))) issues.push("授業可能日未設定の生徒がいます。");
+    if (!db.teacherDateAvailability.some((item) => item.teacherId)) issues.push("授業可能日未設定の講師がいます。");
+  } else if ([...activeRequestStudentIds].some((studentId) => !db.studentAvailabilitySlots.some((item) => item.studentId === studentId))) {
+    issues.push("可能時間未設定の生徒がいます。");
+  }
   if (db.lessonRequests.filter((request) => request.status === "active").length === 0) issues.push("有効な受講希望がありません。");
   issues.push(...validateDb(db));
   return [...new Set(issues)];

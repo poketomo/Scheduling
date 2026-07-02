@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { buildSampleDb } from "../src/sampleData.js";
 import {
   buildCandidateAssignments,
+  buildDateBasedCandidateAssignments,
   buildLessonRequestUnits,
   createConfirmedAssignmentsFromSolution,
+  generateDateBasedScheduleSolutions,
   generateScheduleSolutions
 } from "../src/scheduler.js";
 import { scoreCandidate } from "../src/scoring.js";
@@ -13,7 +15,7 @@ import { cloneLessonRequestRecord, createEmptyDb, mergeDateAvailabilityRows } fr
 import { validateDb } from "../src/validation.js";
 
 function firstSolution(db, options = {}) {
-  const result = generateScheduleSolutions(db, { candidateCount: 3, ...options });
+  const result = generateScheduleSolutions(db, { candidateCount: 3, forceLegacyScheduler: true, ...options });
   return {
     run: result.run,
     solution: result.solutions[0],
@@ -157,7 +159,7 @@ test("手のかかる度が高い生徒の集中が減点される", () => {
 
 test("未割当理由が返る", () => {
   const db = buildSampleDb();
-  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  const result = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   const solution = result.solutions[0];
   assert.equal(Array.isArray(solution.summaryJson.unassigned), true);
   assert.equal(solution.summaryJson.unassigned.some((item) => Array.isArray(item.reasons) && item.reasons.length > 0), true);
@@ -165,11 +167,12 @@ test("未割当理由が返る", () => {
 
 test("固定済み割当が再生成後も維持される", () => {
   const db = buildSampleDb();
-  const initial = generateScheduleSolutions(db, { candidateCount: 1 });
+  const initial = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   const assignment = initial.assignments[0];
   db.scheduleAssignments.push({ ...assignment, isLocked: true });
   const regenerated = generateScheduleSolutions(db, {
     candidateCount: 1,
+    forceLegacyScheduler: true,
     preserveLocks: true,
     lockedAssignments: db.scheduleAssignments.filter((item) => item.isLocked)
   });
@@ -255,21 +258,21 @@ test("未割当理由が複数返る", () => {
   const db = buildSampleDb();
   const request = db.lessonRequests.find((item) => item.studentId === db.students.find((student) => student.name === "森未割当").id);
   request.blockedTeacherIds = db.teachers.map((teacher) => teacher.id);
-  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  const result = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   const entry = result.solutions[0].summaryJson.unassigned.find((item) => item.lessonRequestId === request.id);
   assert.ok(entry.reasons.length >= 2);
 });
 
 test("未割当理由にcodeが含まれる", () => {
   const db = buildSampleDb();
-  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  const result = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   const entry = result.solutions[0].summaryJson.unassigned[0];
   assert.equal(typeof entry.reasons[0].code, "string");
 });
 
 test("確定処理でconfirmedAssignmentsが作られる", () => {
   const db = buildSampleDb();
-  const generated = generateScheduleSolutions(db, { candidateCount: 1 });
+  const generated = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   db.scheduleAssignments = generated.assignments;
   const solutionId = generated.solutions[0].id;
   const confirmed = createConfirmedAssignmentsFromSolution(db, solutionId);
@@ -280,7 +283,7 @@ test("確定処理でconfirmedAssignmentsが作られる", () => {
 test("確定済み割当が次回生成時に衝突チェック対象になる", () => {
   const db = buildSampleDb();
   const request = db.lessonRequests.find((item) => item.studentId === db.students.find((student) => student.name === "確定済み衝突生徒").id);
-  const generated = generateScheduleSolutions(db, { candidateCount: 1 });
+  const generated = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   const assignments = generated.assignments.filter((item) => item.lessonRequestId === request.id);
   assert.equal(assignments.length, 1);
 });
@@ -290,7 +293,7 @@ test("inactive lessonRequest は生成対象外になる", () => {
   request.status = "inactive";
   const units = buildLessonRequestUnits(db).filter((item) => item.lessonRequestId === request.id);
   assert.equal(units.length, 0);
-  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  const result = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   assert.equal(result.assignments.some((item) => item.lessonRequestId === request.id), false);
 });
 
@@ -431,7 +434,7 @@ test("授業希望がない生徒は生成対象外になる", () => {
   const db = buildSampleDb();
   const studentId = "student-no-request";
   db.students.push({ id: studentId, name: "希望なし生徒", supportLevel: 3, memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  const result = generateScheduleSolutions(db, { candidateCount: 1, forceLegacyScheduler: true });
   assert.equal(result.assignments.some((item) => item.studentId === studentId), false);
 });
 
@@ -503,4 +506,177 @@ test("同じ対象者と日付と時間帯の重複を追加しない", () => {
     { id: "row-3", teacherId: "teacher-1", date: "2026-07-20", lessonTimeSlotId: "slot-2" }
   ], "teacherId");
   assert.equal(rows.length, 2);
+});
+
+function buildSimpleDateBasedDb() {
+  const db = createEmptyDb();
+  const subjectId = db.subjects.find((item) => item.name === "数学" && item.stage === "middle")?.id || db.subjects[0].id;
+  const teacherA = { id: "teacher-a", name: "講師A", gender: "female", memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const teacherB = { id: "teacher-b", name: "講師B", gender: "male", memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const student = { id: "student-a", name: "生徒A", supportLevel: 3, memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const slotId = db.timeSlots[0].id;
+  db.teachers.push(teacherA, teacherB);
+  db.students.push(student);
+  db.teacherSubjects.push(
+    { id: "teacher-subject-a", teacherId: teacherA.id, subjectId },
+    { id: "teacher-subject-b", teacherId: teacherB.id, subjectId }
+  );
+  db.lessonRequests.push({
+    id: "request-a",
+    studentId: student.id,
+    subjectId,
+    lessonsPerWeek: 1,
+    durationSlots: 1,
+    priority: 1,
+    preferredTeacherIds: [],
+    blockedTeacherIds: [],
+    preferredGender: null,
+    memo: "",
+    status: "active"
+  });
+  db.studentSubjectRequests.push({ id: "student-subject-a", studentId: student.id, subjectId, priority: 1 });
+  db.teacherDateAvailability.push(
+    { id: "tda-a", teacherId: teacherA.id, date: "2026-07-21", lessonTimeSlotId: slotId },
+    { id: "tda-b", teacherId: teacherB.id, date: "2026-07-21", lessonTimeSlotId: slotId }
+  );
+  db.studentDateAvailability.push({ id: "sda-a", studentId: student.id, date: "2026-07-21", lessonTimeSlotId: slotId });
+  return { db, subjectId, slotId, teacherA, teacherB, student };
+}
+
+test("teacherDateAvailability と studentDateAvailability の共通 date + lessonTimeSlotId で候補が作られる", () => {
+  const { db, slotId, student } = buildSimpleDateBasedDb();
+  const candidates = buildDateBasedCandidateAssignments(db);
+  assert.equal(candidates.some((item) => item.studentId === student.id && item.date === "2026-07-21" && item.timeSlotId === slotId), true);
+});
+
+test("共通日付がない場合は未割当になる", () => {
+  const { db } = buildSimpleDateBasedDb();
+  db.studentDateAvailability[0].date = "2026-07-22";
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.length, 0);
+  assert.equal(result.solutions[0].summaryJson.unassigned[0].reasons.some((item) => item.code === "NO_COMMON_DATE_SLOT"), true);
+});
+
+test("日付ベースでも教科非対応講師には割り当てられない", () => {
+  const { db, teacherB, subjectId } = buildSimpleDateBasedDb();
+  db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== teacherB.id || item.subjectId !== subjectId);
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.some((item) => item.teacherId === teacherB.id), false);
+});
+
+test("日付ベースでもNG講師には割り当てられない", () => {
+  const { db, teacherA } = buildSimpleDateBasedDb();
+  db.lessonRequests[0].blockedTeacherIds = [teacherA.id];
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.some((item) => item.teacherId === teacherA.id), false);
+});
+
+test("日付ベースでも講師1人1日付1時間帯に4人以上入らない", () => {
+  const { db, subjectId, slotId, teacherA } = buildSimpleDateBasedDb();
+  db.teacherDateAvailability = [{ id: "tda-single", teacherId: teacherA.id, date: "2026-07-21", lessonTimeSlotId: slotId }];
+  db.teachers = [teacherA];
+  db.teacherSubjects = [{ id: "teacher-subject-a", teacherId: teacherA.id, subjectId }];
+  db.students = [];
+  db.lessonRequests = [];
+  db.studentSubjectRequests = [];
+  db.studentDateAvailability = [];
+  for (let index = 0; index < 4; index += 1) {
+    const studentId = `student-${index}`;
+    db.students.push({ id: studentId, name: `生徒${index}`, supportLevel: 3, memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    db.lessonRequests.push({ id: `request-${index}`, studentId, subjectId, lessonsPerWeek: 1, durationSlots: 1, priority: 1, preferredTeacherIds: [], blockedTeacherIds: [], preferredGender: null, memo: "", status: "active" });
+    db.studentSubjectRequests.push({ id: `student-subject-${index}`, studentId, subjectId, priority: 1 });
+    db.studentDateAvailability.push({ id: `sda-${index}`, studentId, date: "2026-07-21", lessonTimeSlotId: slotId });
+  }
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.filter((item) => item.date === "2026-07-21" && item.timeSlotId === slotId && item.teacherId === teacherA.id).length, 3);
+});
+
+test("日付ベースでも同じ生徒が同じ date + lessonTimeSlotId に重複しない", () => {
+  const { db, subjectId, student, slotId } = buildSimpleDateBasedDb();
+  db.lessonRequests.push({
+    id: "request-b",
+    studentId: student.id,
+    subjectId,
+    lessonsPerWeek: 1,
+    durationSlots: 1,
+    priority: 2,
+    preferredTeacherIds: [],
+    blockedTeacherIds: [],
+    preferredGender: null,
+    memo: "",
+    status: "active"
+  });
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  const signatures = new Set();
+  for (const assignment of result.assignments) {
+    const signature = `${assignment.studentId}|${assignment.date}|${assignment.timeSlotId}`;
+    assert.equal(signatures.has(signature), false);
+    signatures.add(signature);
+  }
+  assert.equal(result.assignments.filter((item) => item.studentId === student.id && item.date === "2026-07-21" && item.timeSlotId === slotId).length <= 1, true);
+});
+
+test("日付ベースでは lessonsPerWeek=3 の場合 3回分の割当対象が作られる", () => {
+  const { db, slotId, teacherA, student } = buildSimpleDateBasedDb();
+  db.lessonRequests[0].lessonsPerWeek = 3;
+  db.teacherDateAvailability.push(
+    { id: "tda-a-2", teacherId: teacherA.id, date: "2026-07-22", lessonTimeSlotId: slotId },
+    { id: "tda-a-3", teacherId: teacherA.id, date: "2026-07-23", lessonTimeSlotId: slotId }
+  );
+  db.studentDateAvailability.push(
+    { id: "sda-a-2", studentId: student.id, date: "2026-07-22", lessonTimeSlotId: slotId },
+    { id: "sda-a-3", studentId: student.id, date: "2026-07-23", lessonTimeSlotId: slotId }
+  );
+  const units = buildLessonRequestUnits(db).filter((item) => item.lessonRequestId === "request-a");
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(units.length, 3);
+  assert.equal(result.assignments.length, 3);
+});
+
+test("日付ベースでも inactive lessonRequest は対象外", () => {
+  const { db } = buildSimpleDateBasedDb();
+  db.lessonRequests[0].status = "inactive";
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.length, 0);
+});
+
+test("講師相性が日付ベース生成でもスコアに反映される", () => {
+  const { db, teacherA, teacherB, student } = buildSimpleDateBasedDb();
+  db.studentTeacherCompatibilities.push(
+    { id: "compat-a", studentId: student.id, teacherId: teacherA.id, score: 5 },
+    { id: "compat-b", studentId: student.id, teacherId: teacherB.id, score: 1 }
+  );
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments[0].teacherId, teacherA.id);
+  assert.equal(result.assignments[0].scoreBreakdownJson.some((item) => item.label === "講師相性"), true);
+});
+
+test("confirmedAssignment がある date + lessonTimeSlotId では衝突判定される", () => {
+  const { db, subjectId, slotId, student, teacherA } = buildSimpleDateBasedDb();
+  db.confirmedAssignments.push({
+    id: "confirmed-date",
+    studentId: student.id,
+    lessonRequestId: null,
+    teacherId: teacherA.id,
+    subjectId,
+    timeSlotId: slotId,
+    lessonTimeSlotId: slotId,
+    date: "2026-07-21",
+    status: "confirmed",
+    confirmedAt: new Date().toISOString(),
+    sourceScheduleSolutionId: null,
+    memo: ""
+  });
+  const result = generateDateBasedScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.length, 0);
+  assert.equal(result.solutions[0].summaryJson.unassigned[0].reasons.some((item) => item.code === "CONFIRMED_ASSIGNMENT_CONFLICT"), true);
+});
+
+test("日付ベース可用時間がない場合 既存方式にフォールバックする", () => {
+  const db = buildSampleDb();
+  db.teacherDateAvailability = [];
+  db.studentDateAvailability = [];
+  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  assert.ok(result.assignments.length > 0);
+  assert.equal(result.assignments.every((item) => !item.date), true);
 });

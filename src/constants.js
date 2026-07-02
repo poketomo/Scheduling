@@ -31,12 +31,16 @@ export const confirmedAssignmentStatus = {
 
 export const reasonLabels = {
   NO_STUDENT_AVAILABILITY: "生徒の参加できる時間がまだ足りません",
+  NO_STUDENT_DATE_AVAILABILITY: "生徒の参加できる日付がまだ足りません",
+  NO_TEACHER_DATE_AVAILABILITY: "講師の参加できる日付がまだ足りません",
   NO_SUBJECT_REQUEST: "教科の希望が見つかりません",
   NO_TEACHER_FOR_SUBJECT: "この教科を担当できる講師がいません",
   NO_COMMON_TIME_SLOT: "講師と生徒の時間が重なる枠がありません",
+  NO_COMMON_DATE_SLOT: "講師と生徒の日時が重なる枠がありません",
   ONLY_BLOCKED_TEACHERS_AVAILABLE: "空いている講師がすべて NG 講師です",
   TEACHER_SLOT_CAPACITY_FULL: "その時間は講師の受け持ち上限に達しています",
   STUDENT_TIME_CONFLICT: "その時間には別の授業が入っています",
+  CONFIRMED_ASSIGNMENT_CONFLICT: "確定済みの授業とぶつかっています",
   LOCKED_ASSIGNMENT_CONFLICT: "固定した予定とぶつかっています",
   UNKNOWN: "条件に合う組み合わせが見つかりません"
 };
