@@ -1,6 +1,6 @@
 export const STORAGE_KEY = "scheduling-mvp-db-v1";
 export const LEGACY_STORAGE_KEY = "scheduling-mvp-state-v1";
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const tabs = [
   { id: "teachers", label: "講師一覧・追加編集" },
@@ -19,6 +19,28 @@ export const genders = [
   { value: "other", label: "その他" }
 ];
 
+export const lessonRequestStatus = {
+  active: "active",
+  inactive: "inactive"
+};
+
+export const confirmedAssignmentStatus = {
+  confirmed: "confirmed",
+  cancelled: "cancelled"
+};
+
+export const reasonLabels = {
+  NO_STUDENT_AVAILABILITY: "生徒の可能時間がありません",
+  NO_SUBJECT_REQUEST: "希望教科が設定されていません",
+  NO_TEACHER_FOR_SUBJECT: "希望教科に対応できる講師がいません",
+  NO_COMMON_TIME_SLOT: "講師と生徒の共通可能時間がありません",
+  ONLY_BLOCKED_TEACHERS_AVAILABLE: "可能な講師が希望しない講師のみです",
+  TEACHER_SLOT_CAPACITY_FULL: "講師枠の上限に達しています",
+  STUDENT_TIME_CONFLICT: "生徒の他授業と時間が衝突しています",
+  LOCKED_ASSIGNMENT_CONFLICT: "固定済みまたは確定済み授業と衝突しています",
+  UNKNOWN: "割当不可の理由を特定できません"
+};
+
 export const scoreWeights = {
   subjectMatch: 40,
   preferredTeacher: 30,
@@ -26,7 +48,9 @@ export const scoreWeights = {
   genderMatch: 15,
   supportBase: 10,
   supportConcentrationPenalty: -20,
-  teacherLoadPenalty: -10
+  teacherLoadPenalty: -10,
+  sameDayRepeatPenalty: -40,
+  splitDayBonus: 20
 };
 
 export function now() {

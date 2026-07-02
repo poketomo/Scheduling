@@ -1,5 +1,13 @@
 import { LEGACY_STORAGE_KEY, SCHEMA_VERSION, STORAGE_KEY, now, uid } from "./constants.js";
-import { defaultSubjects, defaultTemplates, defaultTimeSlots, migrateLegacyState, removeLegacyStorage } from "./migrations.js";
+import {
+  createLessonRequestsFromStudentSubjectRequests,
+  defaultSubjects,
+  defaultTemplates,
+  defaultTimeSlots,
+  migrateLegacyState,
+  normalizeConfirmedAssignments,
+  removeLegacyStorage
+} from "./migrations.js";
 
 export function createEmptyDb() {
   const templateId = uid("template");
@@ -19,6 +27,8 @@ export function createEmptyDb() {
     studentTeacherPreferences: [],
     studentGenderPreferences: [],
     currentLessonAssignments: [],
+    lessonRequests: [],
+    confirmedAssignments: [],
     scheduleRuns: [],
     scheduleSolutions: [],
     scheduleAssignments: []
@@ -39,15 +49,18 @@ export function ensureDbShape(db) {
     }
   }
 
-  if (!Array.isArray(merged.timetableTemplates) || !merged.timetableTemplates.length) {
+  if (!merged.timetableTemplates.length) {
     const templateId = uid("template");
     merged.timetableTemplates = defaultTemplates(templateId);
     merged.timeSlots = defaultTimeSlots(templateId);
   }
+  if (!merged.timeSlots.length) {
+    merged.timeSlots = defaultTimeSlots(merged.timetableTemplates[0].id);
+  }
 
-  if (!Array.isArray(merged.timeSlots) || !merged.timeSlots.length) {
-    const templateId = merged.timetableTemplates[0].id;
-    merged.timeSlots = defaultTimeSlots(templateId);
+  merged.confirmedAssignments = normalizeConfirmedAssignments(merged.confirmedAssignments);
+  if (!merged.lessonRequests.length && merged.studentSubjectRequests.length) {
+    merged.lessonRequests = createLessonRequestsFromStudentSubjectRequests(merged);
   }
 
   merged.confirmedSolutionId = merged.confirmedSolutionId || null;

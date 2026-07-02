@@ -1,4 +1,12 @@
-import { LEGACY_STORAGE_KEY, SCHEMA_VERSION, weekdays, now, uid } from "./constants.js";
+import {
+  LEGACY_STORAGE_KEY,
+  SCHEMA_VERSION,
+  confirmedAssignmentStatus,
+  lessonRequestStatus,
+  weekdays,
+  now,
+  uid
+} from "./constants.js";
 
 export function migrateLegacyState(rawValue) {
   if (!rawValue) return null;
@@ -8,7 +16,6 @@ export function migrateLegacyState(rawValue) {
   } catch (_error) {
     return null;
   }
-
   if (!legacy || typeof legacy !== "object") return null;
 
   const templateId = legacy.timetableTemplates?.[0]?.id || uid("template");
@@ -28,10 +35,15 @@ export function migrateLegacyState(rawValue) {
     studentTeacherPreferences: arrayOrEmpty(legacy.studentTeacherPreferences),
     studentGenderPreferences: arrayOrEmpty(legacy.studentGenderPreferences),
     currentLessonAssignments: arrayOrEmpty(legacy.currentLessonAssignments),
+    lessonRequests: arrayOrEmpty(legacy.lessonRequests),
+    confirmedAssignments: arrayOrEmpty(legacy.confirmedAssignments),
     scheduleRuns: normalizeRuns(legacy.scheduleRuns),
     scheduleSolutions: normalizeSolutions(legacy.scheduleSolutions),
     scheduleAssignments: normalizeAssignments(legacy.scheduleAssignments)
   };
+  if (!db.lessonRequests.length) {
+    db.lessonRequests = createLessonRequestsFromStudentSubjectRequests(db);
+  }
   return db;
 }
 
@@ -67,6 +79,45 @@ export function defaultTimeSlots(templateId) {
   );
 }
 
+export function createLessonRequestsFromStudentSubjectRequests(db) {
+  const preferredTeacherIdsByStudent = new Map();
+  const blockedTeacherIdsByStudent = new Map();
+  for (const pref of arrayOrEmpty(db.studentTeacherPreferences)) {
+    const map = pref.preferenceType === "preferred" ? preferredTeacherIdsByStudent : blockedTeacherIdsByStudent;
+    if (!map.has(pref.studentId)) map.set(pref.studentId, []);
+    map.get(pref.studentId).push(pref.teacherId);
+  }
+  const preferredGenderByStudent = new Map();
+  for (const pref of arrayOrEmpty(db.studentGenderPreferences)) {
+    if (!preferredGenderByStudent.has(pref.studentId)) preferredGenderByStudent.set(pref.studentId, pref.gender);
+  }
+
+  return arrayOrEmpty(db.studentSubjectRequests).map((request) => ({
+    id: uid("lesson-request"),
+    studentId: request.studentId,
+    subjectId: request.subjectId,
+    lessonsPerWeek: 1,
+    durationSlots: 1,
+    priority: Number.isFinite(request.priority) ? request.priority : 3,
+    preferredTeacherIds: preferredTeacherIdsByStudent.get(request.studentId) || [],
+    blockedTeacherIds: blockedTeacherIdsByStudent.get(request.studentId) || [],
+    preferredGender: preferredGenderByStudent.get(request.studentId) || null,
+    memo: "",
+    status: lessonRequestStatus.active
+  }));
+}
+
+export function normalizeConfirmedAssignments(assignments) {
+  return arrayOrEmpty(assignments).map((assignment) => ({
+    ...assignment,
+    status: assignment.status || confirmedAssignmentStatus.confirmed,
+    confirmedAt: assignment.confirmedAt || now(),
+    sourceScheduleSolutionId: assignment.sourceScheduleSolutionId || null,
+    lessonRequestId: assignment.lessonRequestId || null,
+    memo: assignment.memo || ""
+  }));
+}
+
 function normalizeTemplates(templates, templateId) {
   const items = arrayOrEmpty(templates);
   return items.length ? items : defaultTemplates(templateId);
@@ -94,7 +145,9 @@ function normalizeSolutions(solutions) {
 function normalizeAssignments(assignments) {
   return arrayOrEmpty(assignments).map((assignment) => ({
     ...assignment,
-    scoreBreakdownJson: assignment.scoreBreakdownJson || []
+    scoreBreakdownJson: assignment.scoreBreakdownJson || [],
+    lessonRequestId: assignment.lessonRequestId || null,
+    occurrenceIndex: assignment.occurrenceIndex || 1
   }));
 }
 

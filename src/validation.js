@@ -1,4 +1,9 @@
-import { applyLockedAssignments, buildCandidateAssignments, filterInvalidCandidates } from "./scheduler.js";
+import { confirmedAssignmentStatus } from "./constants.js";
+import {
+  applyLockedAssignments,
+  buildCandidateAssignments,
+  filterInvalidCandidates
+} from "./scheduler.js";
 
 export function validateDb(db) {
   const issues = [];
@@ -7,6 +12,8 @@ export function validateDb(db) {
   validateTimeSlots(db, issues);
   validateReferences(db, issues);
   validateDuplicates(db, issues);
+  validateLessonRequests(db, issues);
+  validateConfirmedAssignments(db, issues);
   validateLockedAssignments(db, issues);
   return issues;
 }
@@ -19,9 +26,8 @@ export function generatorReadiness(db) {
   if (db.teachers.some((teacher) => !String(teacher.name || "").trim())) issues.push("名前未入力の講師がいます。");
   if (db.students.some((student) => !String(student.name || "").trim())) issues.push("名前未入力の生徒がいます。");
   if (db.teachers.some((teacher) => !db.teacherSubjects.some((item) => item.teacherId === teacher.id))) issues.push("対応教科未設定の講師がいます。");
-  if (db.students.some((student) => !db.studentSubjectRequests.some((item) => item.studentId === student.id))) issues.push("希望教科未設定の生徒がいます。");
-  if (db.teachers.some((teacher) => !db.teacherAvailabilitySlots.some((item) => item.teacherId === teacher.id))) issues.push("可能時間未設定の講師がいます。");
   if (db.students.some((student) => !db.studentAvailabilitySlots.some((item) => item.studentId === student.id))) issues.push("可能時間未設定の生徒がいます。");
+  if (db.lessonRequests.filter((request) => request.status === "active").length === 0) issues.push("有効な受講希望がありません。");
   issues.push(...validateDb(db));
   return [...new Set(issues)];
 }
@@ -55,7 +61,8 @@ function validateReferences(db, issues) {
     studentId: new Set(db.students.map((item) => item.id)),
     subjectId: new Set(db.subjects.map((item) => item.id)),
     timeSlotId: new Set(db.timeSlots.map((item) => item.id)),
-    scheduleSolutionId: new Set(db.scheduleSolutions.map((item) => item.id))
+    scheduleSolutionId: new Set(db.scheduleSolutions.map((item) => item.id)),
+    lessonRequestId: new Set(db.lessonRequests.map((item) => item.id))
   };
   validateRefTable(db.teacherSubjects, ["teacherId", "subjectId"], sets, issues, "teacherSubjects");
   validateRefTable(db.teacherAvailabilitySlots, ["teacherId", "timeSlotId"], sets, issues, "teacherAvailabilitySlots");
@@ -64,6 +71,54 @@ function validateReferences(db, issues) {
   validateRefTable(db.studentTeacherPreferences, ["studentId", "teacherId"], sets, issues, "studentTeacherPreferences");
   validateRefTable(db.currentLessonAssignments, ["teacherId", "studentId", "subjectId", "timeSlotId"], sets, issues, "currentLessonAssignments");
   validateRefTable(db.scheduleAssignments, ["scheduleSolutionId", "teacherId", "studentId", "subjectId", "timeSlotId"], sets, issues, "scheduleAssignments");
+}
+
+function validateLessonRequests(db, issues) {
+  const studentIds = new Set(db.students.map((item) => item.id));
+  const subjectIds = new Set(db.subjects.map((item) => item.id));
+  const teacherIds = new Set(db.teachers.map((item) => item.id));
+  for (const request of db.lessonRequests) {
+    if (!studentIds.has(request.studentId)) issues.push("lessonRequests が存在しない studentId を参照しています。");
+    if (!subjectIds.has(request.subjectId)) issues.push("lessonRequests が存在しない subjectId を参照しています。");
+    if (Number(request.lessonsPerWeek) < 1) issues.push("lessonRequests の lessonsPerWeek は1以上が必要です。");
+    if (Number(request.durationSlots) < 1) issues.push("lessonRequests の durationSlots は1以上が必要です。");
+    for (const teacherId of request.preferredTeacherIds || []) {
+      if (!teacherIds.has(teacherId)) issues.push("lessonRequests の preferredTeacherIds に存在しない講師IDがあります。");
+    }
+    for (const teacherId of request.blockedTeacherIds || []) {
+      if (!teacherIds.has(teacherId)) issues.push("lessonRequests の blockedTeacherIds に存在しない講師IDがあります。");
+    }
+  }
+}
+
+function validateConfirmedAssignments(db, issues) {
+  const teacherIds = new Set(db.teachers.map((item) => item.id));
+  const studentIds = new Set(db.students.map((item) => item.id));
+  const subjectIds = new Set(db.subjects.map((item) => item.id));
+  const timeSlotIds = new Set(db.timeSlots.map((item) => item.id));
+  const lessonRequestIds = new Set(db.lessonRequests.map((item) => item.id));
+  const seen = new Set();
+  for (const assignment of db.confirmedAssignments) {
+    if (!studentIds.has(assignment.studentId)) issues.push("confirmedAssignments が存在しない studentId を参照しています。");
+    if (!teacherIds.has(assignment.teacherId)) issues.push("confirmedAssignments が存在しない teacherId を参照しています。");
+    if (!subjectIds.has(assignment.subjectId)) issues.push("confirmedAssignments が存在しない subjectId を参照しています。");
+    if (!timeSlotIds.has(assignment.timeSlotId)) issues.push("confirmedAssignments が存在しない timeSlotId を参照しています。");
+    if (assignment.lessonRequestId && !lessonRequestIds.has(assignment.lessonRequestId)) issues.push("confirmedAssignments が存在しない lessonRequestId を参照しています。");
+    if (!db.teacherSubjects.some((item) => item.teacherId === assignment.teacherId && item.subjectId === assignment.subjectId)) {
+      issues.push("confirmedAssignments に講師対応外の教科が含まれています。");
+    }
+    if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === assignment.timeSlotId)) {
+      issues.push("confirmedAssignments に講師可能時間外の割当があります。");
+    }
+    if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === assignment.timeSlotId)) {
+      issues.push("confirmedAssignments に生徒可能時間外の割当があります。");
+    }
+    const studentConflictKey = `${assignment.studentId}|${assignment.timeSlotId}|${assignment.status}`;
+    if (assignment.status === confirmedAssignmentStatus.confirmed && seen.has(studentConflictKey)) {
+      issues.push("同じ生徒が同じ timeSlotId に複数 confirmedAssignments を持っています。");
+    }
+    seen.add(studentConflictKey);
+  }
 }
 
 function validateDuplicates(db, issues) {
@@ -85,6 +140,7 @@ function validateLockedAssignments(db, issues) {
     const match = candidates.some((candidate) =>
       candidate.teacherId === assignment.teacherId &&
       candidate.studentId === assignment.studentId &&
+      candidate.lessonRequestId === assignment.lessonRequestId &&
       candidate.subjectId === assignment.subjectId &&
       candidate.timeSlotId === assignment.timeSlotId
     );

@@ -10,7 +10,7 @@ export function scoreCandidate(db, candidate, context = {}) {
   if (context.isCurrentTeacher) {
     addBreakdown(breakdown, "現在担当継続", scoreWeights.currentTeacher);
   }
-  if (context.genderPreferenceIds?.size && context.genderPreferenceIds.has(context.teacherGender)) {
+  if (context.preferredGender && context.preferredGender === context.teacherGender) {
     addBreakdown(breakdown, "希望性別一致", scoreWeights.genderMatch);
   }
 
@@ -18,16 +18,17 @@ export function scoreCandidate(db, candidate, context = {}) {
 
   const supportScore = scoreSupportLevelBalance(db, context.assignmentGroup || []);
   if (supportScore !== 0) {
-    addBreakdown(
-      breakdown,
-      supportScore > 0 ? "手のかかる度分散" : "高サポート集中",
-      supportScore
-    );
+    addBreakdown(breakdown, "高サポート集中", supportScore);
   }
 
-  const loadBalanceScore = scoreLoadBalance(db, candidate, context.teacherAssignmentCount || 0, context.averageTeacherLoad || 0);
+  const loadBalanceScore = scoreLoadBalance(context.teacherAssignmentCount || 0, context.averageTeacherLoad || 0);
   if (loadBalanceScore !== 0) {
     addBreakdown(breakdown, "講師負担偏り", loadBalanceScore);
+  }
+
+  const splitScore = scoreSameRequestSpread(context.requestAssignments || [], candidate);
+  if (splitScore !== 0) {
+    addBreakdown(breakdown, splitScore > 0 ? "別曜日分散" : "同曜日集中", splitScore);
   }
 
   if (typeof context.noise === "number" && context.noise !== 0) {
@@ -37,13 +38,19 @@ export function scoreCandidate(db, candidate, context = {}) {
   return buildScoreBreakdown(breakdown);
 }
 
-export function scoreLoadBalance(_db, _candidate, teacherAssignmentCount, averageTeacherLoad) {
+export function scoreLoadBalance(teacherAssignmentCount, averageTeacherLoad) {
   return teacherAssignmentCount > averageTeacherLoad + 1 ? scoreWeights.teacherLoadPenalty : 0;
 }
 
 export function scoreSupportLevelBalance(db, assignmentGroup) {
   const totalLoad = assignmentGroup.reduce((sum, assignment) => sum + supportLoadOfStudent(db, assignment.studentId), 0);
   return totalLoad >= 8 ? scoreWeights.supportConcentrationPenalty : 0;
+}
+
+export function scoreSameRequestSpread(requestAssignments, candidate) {
+  if (!requestAssignments.length) return 0;
+  const sameDay = requestAssignments.some((assignment) => assignment.dayOfWeek === candidate.dayOfWeek);
+  return sameDay ? scoreWeights.sameDayRepeatPenalty : scoreWeights.splitDayBonus;
 }
 
 export function buildScoreBreakdown(parts) {

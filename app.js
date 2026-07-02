@@ -1,6 +1,6 @@
 import { genders, tabs, weekdays, now, uid } from "./src/constants.js";
 import { buildSampleDb } from "./src/sampleData.js";
-import { generateScheduleSolutions, summarizeTeachers } from "./src/scheduler.js";
+import { createConfirmedAssignmentsFromSolution, generateScheduleSolutions, summarizeTeachers } from "./src/scheduler.js";
 import { exportDb, importDb, loadDb, resetDb, saveDb } from "./src/storage.js";
 import { generatorReadiness } from "./src/validation.js";
 
@@ -354,6 +354,7 @@ function renderTeacherForm(teacher) {
 
 function renderStudentForm(student) {
   const current = student || createEmptyStudent();
+  const lessonRequests = lessonRequestsForStudent(current.id);
   return `
     <form id="studentForm" class="stack">
       <input type="hidden" name="id" value="${current.id}" />
@@ -374,9 +375,42 @@ function renderStudentForm(student) {
       </div>
       <label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(current.memo || "")}</textarea></label>
       <label class="field"><span>拡張用フィールド(JSON)</span><textarea name="extraJson">${escapeHtml(JSON.stringify(current.extraJson || {}, null, 2))}</textarea></label>
+      <div class="card">
+        <h4 class="card-title">受講希望設定</h4>
+        ${renderLessonRequestSettings(current.id, lessonRequests)}
+      </div>
       <div class="card"><h4 class="card-title">可能時間</h4>${renderAvailabilityEditor("student", current.id)}</div>
       <div class="action-row"><button class="primary-btn" type="submit">保存</button></div>
     </form>
+  `;
+}
+
+function renderLessonRequestSettings(studentId, requests) {
+  const subjectIds = studentRequestedSubjects(studentId);
+  if (!subjectIds.length) return `<div class="callout warn">希望教科を選ぶと受講希望設定が表示されます。</div>`;
+  return `
+    <table class="simple-table">
+      <thead><tr><th>教科</th><th>週回数</th><th>コマ数</th><th>優先度</th><th>状態</th></tr></thead>
+      <tbody>
+        ${subjectIds.map((subjectId) => {
+          const request = requests.find((item) => item.subjectId === subjectId) || defaultLessonRequestDraft(studentId, subjectId);
+          return `
+            <tr>
+              <td>${escapeHtml(subjectName(subjectId))}</td>
+              <td><input type="number" min="1" max="7" name="lessonRequest-${subjectId}-lessonsPerWeek" value="${request.lessonsPerWeek || 1}" /></td>
+              <td><input type="number" min="1" max="4" name="lessonRequest-${subjectId}-durationSlots" value="${request.durationSlots || 1}" /></td>
+              <td><input type="number" min="1" max="5" name="lessonRequest-${subjectId}-priority" value="${request.priority || 3}" /></td>
+              <td>
+                <select name="lessonRequest-${subjectId}-status">
+                  <option value="active" ${request.status !== "inactive" ? "selected" : ""}>active</option>
+                  <option value="inactive" ${request.status === "inactive" ? "selected" : ""}>inactive</option>
+                </select>
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
   `;
 }
 
@@ -495,7 +529,7 @@ function renderSolutionDetail(solution) {
       <div class="card-grid">
         <div class="card">
           <h4 class="card-title">未割当生徒</h4>
-          ${unassigned.length ? `<table class="simple-table"><thead><tr><th>生徒</th><th>理由</th></tr></thead><tbody>${unassigned.map((item) => `<tr><td>${escapeHtml(studentName(item.studentId))}</td><td>${escapeHtml(item.reason)}</td></tr>`).join("")}</tbody></table>` : `<div class="callout success">未割当はありません。</div>`}
+          ${unassigned.length ? `<table class="simple-table"><thead><tr><th>生徒</th><th>受講希望</th><th>理由</th></tr></thead><tbody>${unassigned.map((item) => `<tr><td>${escapeHtml(studentName(item.studentId))}</td><td>${escapeHtml(subjectName(lessonRequestById(item.lessonRequestId)?.subjectId))}</td><td>${(item.reasons || []).map((reason) => `${escapeHtml(reason.code)}: ${escapeHtml(reason.label)}`).join("<br>")}</td></tr>`).join("")}</tbody></table>` : `<div class="callout success">未割当はありません。</div>`}
         </div>
         <div class="card">
           <h4 class="card-title">講師別サマリ</h4>
@@ -685,21 +719,30 @@ function saveStudent(event) {
   student.memo = String(form.get("memo") || "");
   student.extraJson = safeJson(form.get("extraJson"));
   student.updatedAt = now();
+  const preferredTeacherIds = [];
+  const blockedTeacherIds = [];
+  const preferredGenders = [];
   db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== student.id);
+  const selectedSubjectIds = [];
   event.currentTarget.querySelectorAll('input[name="student-subject"]:checked').forEach((input, index) => {
+    selectedSubjectIds.push(input.value);
     db.studentSubjectRequests.push({ id: uid("student-subject"), studentId: student.id, subjectId: input.value, priority: index + 1 });
   });
   db.studentGenderPreferences = db.studentGenderPreferences.filter((item) => item.studentId !== student.id);
   event.currentTarget.querySelectorAll('input[name="student-gender"]:checked').forEach((input, index) => {
+    preferredGenders.push(input.value);
     db.studentGenderPreferences.push({ id: uid("student-gender"), studentId: student.id, gender: input.value, priority: index + 1 });
   });
   db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.studentId !== student.id);
   event.currentTarget.querySelectorAll('input[name="student-pref-preferred"]:checked').forEach((input) => {
+    preferredTeacherIds.push(input.value);
     db.studentTeacherPreferences.push({ id: uid("student-pref"), studentId: student.id, teacherId: input.value, preferenceType: "preferred" });
   });
   event.currentTarget.querySelectorAll('input[name="student-pref-blocked"]:checked').forEach((input) => {
+    blockedTeacherIds.push(input.value);
     db.studentTeacherPreferences.push({ id: uid("student-pref"), studentId: student.id, teacherId: input.value, preferenceType: "blocked" });
   });
+  syncLessonRequestsForStudent(student.id, selectedSubjectIds, form, preferredTeacherIds, blockedTeacherIds, preferredGenders[0] || null);
   persist();
   render();
 }
@@ -720,6 +763,8 @@ function removeStudent(id) {
   db.students = db.students.filter((item) => item.id !== id);
   db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== id);
   db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== id);
+  db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== id);
+  db.confirmedAssignments = db.confirmedAssignments.filter((item) => item.studentId !== id);
   db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.studentId !== id);
   db.studentGenderPreferences = db.studentGenderPreferences.filter((item) => item.studentId !== id);
   db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.studentId !== id);
@@ -917,7 +962,10 @@ function runScheduleGeneration(forcePreserveLocks = false) {
   });
   db.scheduleRuns.unshift(result.run);
   db.scheduleSolutions = db.scheduleSolutions.filter((item) => item.scheduleRunId !== result.run.id).concat(result.solutions);
-  db.scheduleAssignments = db.scheduleAssignments.filter((item) => !result.assignments.some((assignment) => assignment.id === item.id)).concat(result.assignments);
+  const newSolutionIds = new Set(result.solutions.map((item) => item.id));
+  db.scheduleAssignments = db.scheduleAssignments
+    .filter((item) => !newSolutionIds.has(item.scheduleSolutionId))
+    .concat(result.assignments);
   ui.selectedRunId = result.run.id;
   ui.selectedSolutionId = result.solutions[0]?.id || null;
   persist();
@@ -939,6 +987,14 @@ function toggleAssignmentLock(id) {
 
 function confirmSolution(solutionId) {
   db.confirmedSolutionId = solutionId;
+  const toConfirm = createConfirmedAssignmentsFromSolution(db, solutionId);
+  const lessonRequestIds = new Set(toConfirm.map((item) => item.lessonRequestId).filter(Boolean));
+  db.confirmedAssignments = db.confirmedAssignments.map((item) =>
+    lessonRequestIds.has(item.lessonRequestId) && item.status === "confirmed"
+      ? { ...item, status: "cancelled" }
+      : item
+  );
+  db.confirmedAssignments.push(...toConfirm);
   persist();
   render();
 }
@@ -1037,6 +1093,30 @@ function seedSampleData() {
   render();
 }
 
+function syncLessonRequestsForStudent(studentId, selectedSubjectIds, form, preferredTeacherIds, blockedTeacherIds, preferredGender) {
+  const existing = db.lessonRequests.filter((item) => item.studentId === studentId);
+  const nextRequests = [];
+  selectedSubjectIds.forEach((subjectId, index) => {
+    const current = existing.find((item) => item.subjectId === subjectId) || defaultLessonRequestDraft(studentId, subjectId);
+    nextRequests.push({
+      ...current,
+      studentId,
+      subjectId,
+      lessonsPerWeek: Number(form.get(`lessonRequest-${subjectId}-lessonsPerWeek`) || 1),
+      durationSlots: Number(form.get(`lessonRequest-${subjectId}-durationSlots`) || 1),
+      priority: Number(form.get(`lessonRequest-${subjectId}-priority`) || index + 1 || 3),
+      preferredTeacherIds: [...preferredTeacherIds],
+      blockedTeacherIds: [...blockedTeacherIds],
+      preferredGender,
+      status: String(form.get(`lessonRequest-${subjectId}-status`) || "active"),
+      memo: current.memo || ""
+    });
+  });
+  db.lessonRequests = db.lessonRequests
+    .filter((item) => item.studentId !== studentId)
+    .concat(nextRequests);
+}
+
 function teacherSubjectIds(teacherId) {
   return db.teacherSubjects.filter((item) => item.teacherId === teacherId).map((item) => item.subjectId);
 }
@@ -1051,6 +1131,26 @@ function teacherHasSubject(teacherId, subjectId) {
 
 function studentRequestedSubjects(studentId) {
   return db.studentSubjectRequests.filter((item) => item.studentId === studentId).sort((a, b) => a.priority - b.priority).map((item) => item.subjectId);
+}
+
+function lessonRequestsForStudent(studentId) {
+  return db.lessonRequests.filter((item) => item.studentId === studentId);
+}
+
+function defaultLessonRequestDraft(studentId, subjectId) {
+  return {
+    id: uid("lesson-request"),
+    studentId,
+    subjectId,
+    lessonsPerWeek: 1,
+    durationSlots: 1,
+    priority: 3,
+    preferredTeacherIds: [],
+    blockedTeacherIds: [],
+    preferredGender: null,
+    memo: "",
+    status: "active"
+  };
 }
 
 function studentRequestedSubjectNames(studentId) {
@@ -1096,6 +1196,10 @@ function slotKey(slot) {
 
 function subjectName(id) {
   return db.subjects.find((item) => item.id === id)?.name || "未設定";
+}
+
+function lessonRequestById(id) {
+  return db.lessonRequests.find((item) => item.id === id) || null;
 }
 
 function teacherName(id) {

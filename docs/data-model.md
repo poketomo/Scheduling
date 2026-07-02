@@ -2,7 +2,7 @@
 
 ## schemaVersion
 
-- `schemaVersion`: 現在は `1`
+- `schemaVersion`: 現在は `2`
 - `localStorage` キー: `scheduling-mvp-db-v1`
 - 旧キー `scheduling-mvp-state-v1` は初回読込時に移行する
 
@@ -64,7 +64,30 @@
 - 中間テーブル
 - `studentId -> students.id`
 - `subjectId -> subjects.id`
-- `priority` で希望順を保持
+- 旧MVP互換の希望教科入力
+- 保存は維持するが、生成の中心は `lessonRequests`
+
+### lessonRequests
+
+- 主キー: `id`
+- `studentId -> students.id`
+- `subjectId -> subjects.id`
+- 実際の受講希望単位
+- 主な列:
+  - `lessonsPerWeek`
+  - `durationSlots`
+  - `priority`
+  - `preferredTeacherIds`
+  - `blockedTeacherIds`
+  - `preferredGender`
+  - `memo`
+  - `status`
+
+### lessonsPerWeek の扱い
+
+- `lessonsPerWeek = 2` のとき、内部では2件の割当ユニットに展開する
+- 生成時は同じ生徒の同時間重複を禁止する
+- 同じ `lessonRequest` の複数回は、可能なら別曜日へ分散する
 
 ### studentTeacherPreferences
 
@@ -73,6 +96,7 @@
 - `studentId -> students.id`
 - `teacherId -> teachers.id`
 - `preferenceType`: `preferred` or `blocked`
+- 既存UI互換のため残し、必要に応じて `lessonRequests` へ同期する
 
 ### studentGenderPreferences
 
@@ -85,6 +109,7 @@
 - 主キー: `id`
 - 現在担当中の授業
 - `teacherId`, `studentId`, `subjectId`, `timeSlotId` を参照
+- 主に継続担当スコアへ使う
 
 ### scheduleRuns
 
@@ -102,9 +127,43 @@
 
 - 主キー: `id`
 - `scheduleSolutionId -> scheduleSolutions.id`
-- 割当本体
+- 生成候補の割当本体
+- `lessonRequestId` と `occurrenceIndex` を持つ
 - `scoreBreakdownJson` にスコア内訳を保持
 - `isLocked` で固定状態を保持
+
+### confirmedAssignments
+
+- 主キー: `id`
+- 正式確定した授業割当
+- `studentId`, `lessonRequestId`, `teacherId`, `subjectId`, `timeSlotId` を参照
+- `status`: `confirmed` or `cancelled`
+- `confirmedAt`, `sourceScheduleSolutionId`, `memo` を保持
+
+## currentLessonAssignments / scheduleAssignments / confirmedAssignments の違い
+
+- `currentLessonAssignments`
+  - 現在運用中の担当情報
+  - 継続担当スコアの材料
+- `scheduleAssignments`
+  - 自動生成された候補案の中身
+  - まだ正式確定ではない
+- `confirmedAssignments`
+  - 正式に確定した授業
+  - 次回生成時の衝突チェック対象
+  - 同じ `lessonRequest` の必要回数も消化扱いにする
+
+## 未割当理由コード
+
+- `NO_STUDENT_AVAILABILITY`
+- `NO_SUBJECT_REQUEST`
+- `NO_TEACHER_FOR_SUBJECT`
+- `NO_COMMON_TIME_SLOT`
+- `ONLY_BLOCKED_TEACHERS_AVAILABLE`
+- `TEACHER_SLOT_CAPACITY_FULL`
+- `STUDENT_TIME_CONFLICT`
+- `LOCKED_ASSIGNMENT_CONFLICT`
+- `UNKNOWN`
 
 ## 参照関係
 
@@ -112,20 +171,36 @@
 - `teachers` 1 - n `teacherAvailabilitySlots`
 - `students` 1 - n `studentAvailabilitySlots`
 - `students` 1 - n `studentSubjectRequests`
-- `students` 1 - n `studentTeacherPreferences`
+- `students` 1 - n `lessonRequests`
 - `timeSlots` は可能時間と割当に共通で使う
 - `scheduleRuns` 1 - n `scheduleSolutions`
 - `scheduleSolutions` 1 - n `scheduleAssignments`
 
-## 中間テーブルの意味
+## Supabase へ移す場合のテーブル候補
 
-- 複数選択項目を文字列配列で持たないための構造
-- 将来 DB 化したときもそのままテーブルへ移しやすい
+- `teachers`
+- `students`
+- `subjects`
+- `timetable_templates`
+- `time_slots`
+- `teacher_subjects`
+- `teacher_availability_slots`
+- `student_availability_slots`
+- `student_subject_requests`
+- `lesson_requests`
+- `student_teacher_preferences`
+- `student_gender_preferences`
+- `current_lesson_assignments`
+- `schedule_runs`
+- `schedule_solutions`
+- `schedule_assignments`
+- `confirmed_assignments`
 
-## Supabase へ移す場合の対応表
+## JSON系の列候補
 
-- 各配列をそのままテーブルへ移行可能
-- `id` は UUID へ置き換え可能
-- `extraJson`, `inputSnapshotJson`, `summaryJson`, `scoreBreakdownJson` は `jsonb` 候補
-- `createdAt`, `updatedAt` は `timestamp with time zone`
-- 中間配列は複合ユニーク制約候補あり
+- `extraJson`
+- `inputSnapshotJson`
+- `summaryJson`
+- `scoreBreakdownJson`
+
+これらは Supabase では `jsonb` 候補。
