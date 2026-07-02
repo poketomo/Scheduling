@@ -111,3 +111,13 @@ export function importDb(json) {
   saveDb(normalized);
   return normalized;
 }
+
+export function cloneLessonRequestRecord(request, overrides = {}) {
+  return {
+    ...request,
+    ...overrides,
+    id: uid("lesson-request"),
+    preferredTeacherIds: [...new Set((overrides.preferredTeacherIds || request.preferredTeacherIds || []).filter((teacherId) => !(overrides.blockedTeacherIds || request.blockedTeacherIds || []).includes(teacherId)))],
+    blockedTeacherIds: [...new Set(overrides.blockedTeacherIds || request.blockedTeacherIds || [])]
+  };
+}

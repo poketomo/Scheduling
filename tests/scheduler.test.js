@@ -9,6 +9,7 @@ import {
   generateScheduleSolutions
 } from "../src/scheduler.js";
 import { scoreCandidate } from "../src/scoring.js";
+import { cloneLessonRequestRecord } from "../src/storage.js";
 
 function firstSolution(db, options = {}) {
   const result = generateScheduleSolutions(db, { candidateCount: 3, ...options });
@@ -281,4 +282,41 @@ test("確定済み割当が次回生成時に衝突チェック対象になる",
   const generated = generateScheduleSolutions(db, { candidateCount: 1 });
   const assignments = generated.assignments.filter((item) => item.lessonRequestId === request.id);
   assert.equal(assignments.length, 1);
+});
+test("inactive lessonRequest は生成対象外になる", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests.find((item) => item.status !== "inactive");
+  request.status = "inactive";
+  const units = buildLessonRequestUnits(db).filter((item) => item.lessonRequestId === request.id);
+  assert.equal(units.length, 0);
+  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.some((item) => item.lessonRequestId === request.id), false);
+});
+
+test("lessonRequest 複製後は別idになる", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests[0];
+  const duplicate = cloneLessonRequestRecord(request);
+  assert.notEqual(duplicate.id, request.id);
+  assert.equal(duplicate.studentId, request.studentId);
+  assert.equal(duplicate.subjectId, request.subjectId);
+});
+
+test("preferredTeacherIds と blockedTeacherIds が重複した場合は blocked が優先される", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests[0];
+  const teacherId = db.teachers[0].id;
+  request.preferredTeacherIds = [teacherId];
+  request.blockedTeacherIds = [teacherId];
+  const duplicate = cloneLessonRequestRecord(request);
+  assert.deepEqual(duplicate.preferredTeacherIds, []);
+  assert.deepEqual(duplicate.blockedTeacherIds, [teacherId]);
+});
+
+test("lessonsPerWeek の変更が生成ユニット数に反映される", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests[0];
+  request.lessonsPerWeek = 3;
+  const units = buildLessonRequestUnits(db).filter((item) => item.lessonRequestId === request.id);
+  assert.equal(units.length, 3);
 });

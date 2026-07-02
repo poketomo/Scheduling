@@ -82,6 +82,7 @@ function validateLessonRequests(db, issues) {
     if (!subjectIds.has(request.subjectId)) issues.push("lessonRequests が存在しない subjectId を参照しています。");
     if (Number(request.lessonsPerWeek) < 1) issues.push("lessonRequests の lessonsPerWeek は1以上が必要です。");
     if (Number(request.durationSlots) < 1) issues.push("lessonRequests の durationSlots は1以上が必要です。");
+    if (!["active", "inactive"].includes(request.status)) issues.push("lessonRequests の status は active / inactive のみです。");
     for (const teacherId of request.preferredTeacherIds || []) {
       if (!teacherIds.has(teacherId)) issues.push("lessonRequests の preferredTeacherIds に存在しない講師IDがあります。");
     }

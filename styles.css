@@ -631,6 +631,22 @@ textarea {
   align-items: end;
 }
 
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  margin-bottom: 14px;
+}
+
+.filter-toggle {
+  align-self: end;
+  min-height: 46px;
+}
+
 .card {
   gap: 12px;
 }
@@ -650,6 +666,11 @@ textarea {
   padding: 14px;
   display: grid;
   gap: 12px;
+}
+
+.lesson-request-card.is-inactive {
+  background: #f8fafc;
+  opacity: 0.82;
 }
 
 .lesson-request-card header {
@@ -680,6 +701,15 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.request-memo {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .result-board,
