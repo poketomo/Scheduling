@@ -313,6 +313,111 @@ test("preferredTeacherIds と blockedTeacherIds が重複した場合は blocked
   assert.deepEqual(duplicate.blockedTeacherIds, [teacherId]);
 });
 
+test("相性5の講師は相性3の講師より高スコアになる", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests.find((item) => item.blockedTeacherIds.length === 0);
+  const candidates = buildCandidateAssignments(db).filter((item) => item.lessonRequestId === request.id);
+  const baseCandidate = candidates[0];
+  const betterCandidate = candidates.find((item) => item.teacherId !== baseCandidate.teacherId);
+  assert.ok(baseCandidate);
+  assert.ok(betterCandidate);
+  db.studentTeacherCompatibilities.push({
+    id: "compat-strong",
+    studentId: request.studentId,
+    teacherId: baseCandidate.teacherId,
+    score: 5
+  });
+  const strong = scoreCandidate(db, baseCandidate, {
+    preferredTeacherIds: new Set(request.preferredTeacherIds),
+    preferredGender: request.preferredGender,
+    teacherGender: db.teachers.find((item) => item.id === baseCandidate.teacherId).gender,
+    assignmentGroup: [],
+    requestAssignments: [],
+    teacherAssignmentCount: 0,
+    averageTeacherLoad: 0
+  });
+  const neutral = scoreCandidate(db, betterCandidate, {
+    preferredTeacherIds: new Set(request.preferredTeacherIds),
+    preferredGender: request.preferredGender,
+    teacherGender: db.teachers.find((item) => item.id === betterCandidate.teacherId).gender,
+    assignmentGroup: [],
+    requestAssignments: [],
+    teacherAssignmentCount: 0,
+    averageTeacherLoad: 0
+  });
+  assert.ok(strong.total > neutral.total);
+  assert.equal(strong.breakdown.some((item) => item.label === "講師相性" && item.value === 20), true);
+});
+
+test("相性1の講師は減点される", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests.find((item) => item.blockedTeacherIds.length === 0);
+  const candidate = buildCandidateAssignments(db).find((item) => item.lessonRequestId === request.id);
+  assert.ok(candidate);
+  db.studentTeacherCompatibilities.push({
+    id: "compat-low",
+    studentId: request.studentId,
+    teacherId: candidate.teacherId,
+    score: 1
+  });
+  const scored = scoreCandidate(db, candidate, {
+    preferredTeacherIds: new Set(request.preferredTeacherIds),
+    preferredGender: request.preferredGender,
+    teacherGender: db.teachers.find((item) => item.id === candidate.teacherId).gender,
+    assignmentGroup: [],
+    requestAssignments: [],
+    teacherAssignmentCount: 0,
+    averageTeacherLoad: 0
+  });
+  assert.equal(scored.breakdown.some((item) => item.label === "講師相性" && item.value === -30), true);
+});
+
+test("相性未設定は3扱いになる", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests.find((item) => item.blockedTeacherIds.length === 0);
+  const candidate = buildCandidateAssignments(db).find((item) => item.lessonRequestId === request.id);
+  assert.ok(candidate);
+  const unset = scoreCandidate(db, candidate, {
+    preferredTeacherIds: new Set(request.preferredTeacherIds),
+    preferredGender: request.preferredGender,
+    teacherGender: db.teachers.find((item) => item.id === candidate.teacherId).gender,
+    assignmentGroup: [],
+    requestAssignments: [],
+    teacherAssignmentCount: 0,
+    averageTeacherLoad: 0
+  });
+  db.studentTeacherCompatibilities.push({
+    id: "compat-neutral",
+    studentId: request.studentId,
+    teacherId: candidate.teacherId,
+    score: 3
+  });
+  const neutral = scoreCandidate(db, candidate, {
+    preferredTeacherIds: new Set(request.preferredTeacherIds),
+    preferredGender: request.preferredGender,
+    teacherGender: db.teachers.find((item) => item.id === candidate.teacherId).gender,
+    assignmentGroup: [],
+    requestAssignments: [],
+    teacherAssignmentCount: 0,
+    averageTeacherLoad: 0
+  });
+  assert.equal(unset.total, neutral.total);
+});
+
+test("NG講師は相性5でも割り当てられない", () => {
+  const db = buildSampleDb();
+  const request = db.lessonRequests.find((item) => item.blockedTeacherIds.length > 0);
+  const blockedTeacherId = request.blockedTeacherIds[0];
+  db.studentTeacherCompatibilities.push({
+    id: "compat-blocked",
+    studentId: request.studentId,
+    teacherId: blockedTeacherId,
+    score: 5
+  });
+  const { assignments } = firstSolution(db);
+  assert.equal(assignments.some((item) => item.lessonRequestId === request.id && item.teacherId === blockedTeacherId), false);
+});
+
 test("lessonsPerWeek の変更が生成ユニット数に反映される", () => {
   const db = buildSampleDb();
   const request = db.lessonRequests[0];

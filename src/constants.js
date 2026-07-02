@@ -46,6 +46,13 @@ export const scoreWeights = {
   preferredTeacher: 30,
   currentTeacher: 20,
   genderMatch: 15,
+  teacherCompatibility: {
+    1: -30,
+    2: -10,
+    3: 0,
+    4: 10,
+    5: 20
+  },
   supportBase: 10,
   supportConcentrationPenalty: -20,
   teacherLoadPenalty: -10,

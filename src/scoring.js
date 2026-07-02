@@ -13,6 +13,10 @@ export function scoreCandidate(db, candidate, context = {}) {
   if (context.preferredGender && context.preferredGender === context.teacherGender) {
     addBreakdown(breakdown, "希望性別一致", scoreWeights.genderMatch);
   }
+  const compatibilityScore = scoreTeacherCompatibility(db, candidate.studentId, candidate.teacherId);
+  if (compatibilityScore !== 0) {
+    addBreakdown(breakdown, "講師相性", compatibilityScore);
+  }
 
   addBreakdown(breakdown, "手のかかる度バランス基礎", scoreWeights.supportBase);
 
@@ -66,6 +70,13 @@ export function supportLoadOfStudent(db, studentId) {
   if (level === 3) return 2;
   if (level === 4) return 3;
   return 4;
+}
+
+export function scoreTeacherCompatibility(db, studentId, teacherId) {
+  const level = Number(
+    db.studentTeacherCompatibilities?.find((item) => item.studentId === studentId && item.teacherId === teacherId)?.score || 3
+  );
+  return scoreWeights.teacherCompatibility[level] ?? scoreWeights.teacherCompatibility[3];
 }
 
 function addBreakdown(breakdown, label, value) {
