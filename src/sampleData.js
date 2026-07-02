@@ -31,6 +31,15 @@ export function buildSampleDb() {
   pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[0].id, [slot1, slot2, slot3, slot4]);
   pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[1].id, [slot2, slot3, slot4, slot5]);
   pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[2].id, [slot1, slot3, slot5, slot6]);
+  pushDateAvailability(db.teacherDateAvailability, "teacherId", teachers[0].id, [
+    [daysFromToday(1), slot1.id],
+    [daysFromToday(1), slot2.id],
+    [daysFromToday(3), slot3.id]
+  ]);
+  pushDateAvailability(db.teacherDateAvailability, "teacherId", teachers[1].id, [
+    [daysFromToday(2), slot2.id],
+    [daysFromToday(4), slot4.id]
+  ]);
 
   const students = {
     hana: student("山田花子", 4),
@@ -80,6 +89,14 @@ export function buildSampleDb() {
   pushAvailability(db.studentAvailabilitySlots, "studentId", students.multi.id, [slot1, slot2, slot3, slot5]);
   pushAvailability(db.studentAvailabilitySlots, "studentId", students.weeklyTwo.id, [slot1, slot3, slot5]);
   pushAvailability(db.studentAvailabilitySlots, "studentId", students.confirmed.id, [slot2, slot4]);
+  pushDateAvailability(db.studentDateAvailability, "studentId", students.hana.id, [
+    [daysFromToday(1), slot1.id],
+    [daysFromToday(5), slot2.id]
+  ]);
+  pushDateAvailability(db.studentDateAvailability, "studentId", students.ren.id, [
+    [daysFromToday(2), slot2.id],
+    [daysFromToday(4), slot3.id]
+  ]);
 
   db.studentTeacherPreferences.push(
     link("student-pref", { studentId: students.hana.id, teacherId: teachers[0].id, preferenceType: "preferred" }),
@@ -180,6 +197,17 @@ function pushAvailability(collection, ownerKey, ownerId, slots) {
   }
 }
 
+function pushDateAvailability(collection, ownerKey, ownerId, entries) {
+  for (const [date, lessonTimeSlotId] of entries) {
+    collection.push({
+      id: uid("date-availability"),
+      [ownerKey]: ownerId,
+      date,
+      lessonTimeSlotId
+    });
+  }
+}
+
 function addStudentSubject(db, studentId, subjectId, priority) {
   db.studentSubjectRequests.push({
     id: uid("student-subject"),
@@ -191,4 +219,13 @@ function addStudentSubject(db, studentId, subjectId, priority) {
 
 function findSlot(db, dayOfWeek, startTime, endTime) {
   return db.timeSlots.find((slot) => slot.dayOfWeek === dayOfWeek && slot.startTime === startTime && slot.endTime === endTime);
+}
+
+function daysFromToday(offset) {
+  const base = new Date();
+  base.setDate(base.getDate() + offset);
+  const year = base.getFullYear();
+  const month = String(base.getMonth() + 1).padStart(2, "0");
+  const day = String(base.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

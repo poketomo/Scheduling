@@ -24,6 +24,8 @@ export function createEmptyDb() {
     teacherSubjects: [],
     teacherAvailabilitySlots: [],
     studentAvailabilitySlots: [],
+    teacherDateAvailability: [],
+    studentDateAvailability: [],
     studentSubjectRequests: [],
     studentTeacherPreferences: [],
     studentTeacherCompatibilities: [],
@@ -62,6 +64,8 @@ export function ensureDbShape(db) {
 
   merged.confirmedAssignments = normalizeConfirmedAssignments(merged.confirmedAssignments);
   merged.subjects = ensureSubjectCatalog(merged.subjects);
+  merged.teacherDateAvailability = dedupeDateAvailabilityRows(merged.teacherDateAvailability, "teacherId");
+  merged.studentDateAvailability = dedupeDateAvailabilityRows(merged.studentDateAvailability, "studentId");
   if (!merged.lessonRequests.length && merged.studentSubjectRequests.length) {
     merged.lessonRequests = createLessonRequestsFromStudentSubjectRequests(merged);
   }
@@ -123,4 +127,30 @@ export function cloneLessonRequestRecord(request, overrides = {}) {
     preferredTeacherIds: [...new Set((overrides.preferredTeacherIds || request.preferredTeacherIds || []).filter((teacherId) => !(overrides.blockedTeacherIds || request.blockedTeacherIds || []).includes(teacherId)))],
     blockedTeacherIds: [...new Set(overrides.blockedTeacherIds || request.blockedTeacherIds || [])]
   };
+}
+
+export function dedupeDateAvailabilityRows(rows, ownerKey) {
+  const list = Array.isArray(rows) ? rows : [];
+  const seen = new Set();
+  const normalized = [];
+  for (const row of list) {
+    const ownerId = row?.[ownerKey];
+    const date = String(row?.date || "");
+    const lessonTimeSlotId = row?.lessonTimeSlotId;
+    const signature = `${ownerId}|${date}|${lessonTimeSlotId}`;
+    if (!ownerId || !date || !lessonTimeSlotId || seen.has(signature)) continue;
+    seen.add(signature);
+    normalized.push({
+      id: row.id || uid("date-availability"),
+      ...row,
+      [ownerKey]: ownerId,
+      date,
+      lessonTimeSlotId
+    });
+  }
+  return normalized;
+}
+
+export function mergeDateAvailabilityRows(rows, additions, ownerKey) {
+  return dedupeDateAvailabilityRows([...(Array.isArray(rows) ? rows : []), ...(Array.isArray(additions) ? additions : [])], ownerKey);
 }

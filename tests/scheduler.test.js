@@ -9,7 +9,8 @@ import {
   generateScheduleSolutions
 } from "../src/scheduler.js";
 import { scoreCandidate } from "../src/scoring.js";
-import { cloneLessonRequestRecord, createEmptyDb } from "../src/storage.js";
+import { cloneLessonRequestRecord, createEmptyDb, mergeDateAvailabilityRows } from "../src/storage.js";
+import { validateDb } from "../src/validation.js";
 
 function firstSolution(db, options = {}) {
   const result = generateScheduleSolutions(db, { candidateCount: 3, ...options });
@@ -444,4 +445,62 @@ test("重複する開始時刻の時間帯を初期化できる", () => {
   const sameStart = db.timeSlots.filter((slot) => slot.startTime === "19:00").map((slot) => slot.endTime);
   assert.equal(sameStart.includes("20:20"), true);
   assert.equal(sameStart.includes("19:50"), true);
+});
+
+test("teacherDateAvailability が createEmptyDb に含まれる", () => {
+  const db = createEmptyDb();
+  assert.equal(Array.isArray(db.teacherDateAvailability), true);
+});
+
+test("studentDateAvailability が createEmptyDb に含まれる", () => {
+  const db = createEmptyDb();
+  assert.equal(Array.isArray(db.studentDateAvailability), true);
+});
+
+test("teacherDateAvailability の不正 teacherId を validation が検出する", () => {
+  const db = createEmptyDb();
+  db.teacherDateAvailability.push({
+    id: "tda-invalid",
+    teacherId: "missing-teacher",
+    date: "2026-07-20",
+    lessonTimeSlotId: db.timeSlots[0].id
+  });
+  const issues = validateDb(db);
+  assert.equal(issues.some((item) => item.includes("登録されていない講師")), true);
+});
+
+test("studentDateAvailability の不正 studentId を validation が検出する", () => {
+  const db = createEmptyDb();
+  db.studentDateAvailability.push({
+    id: "sda-invalid",
+    studentId: "missing-student",
+    date: "2026-07-20",
+    lessonTimeSlotId: db.timeSlots[0].id
+  });
+  const issues = validateDb(db);
+  assert.equal(issues.some((item) => item.includes("登録されていない生徒")), true);
+});
+
+test("date 形式が YYYY-MM-DD でない場合に validation が検出する", () => {
+  const db = createEmptyDb();
+  const teacher = { id: "teacher-date-test", name: "日付確認", gender: "any", memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  db.teachers.push(teacher);
+  db.teacherDateAvailability.push({
+    id: "tda-date-invalid",
+    teacherId: teacher.id,
+    date: "2026/07/20",
+    lessonTimeSlotId: db.timeSlots[0].id
+  });
+  const issues = validateDb(db);
+  assert.equal(issues.some((item) => item.includes("日付形式が不正")), true);
+});
+
+test("同じ対象者と日付と時間帯の重複を追加しない", () => {
+  const rows = mergeDateAvailabilityRows([
+    { id: "row-1", teacherId: "teacher-1", date: "2026-07-20", lessonTimeSlotId: "slot-1" }
+  ], [
+    { id: "row-2", teacherId: "teacher-1", date: "2026-07-20", lessonTimeSlotId: "slot-1" },
+    { id: "row-3", teacherId: "teacher-1", date: "2026-07-20", lessonTimeSlotId: "slot-2" }
+  ], "teacherId");
+  assert.equal(rows.length, 2);
 });

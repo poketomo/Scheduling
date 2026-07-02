@@ -31,6 +31,8 @@ export function migrateLegacyState(rawValue) {
     teacherSubjects: arrayOrEmpty(legacy.teacherSubjects),
     teacherAvailabilitySlots: arrayOrEmpty(legacy.teacherAvailabilitySlots),
     studentAvailabilitySlots: arrayOrEmpty(legacy.studentAvailabilitySlots),
+    teacherDateAvailability: arrayOrEmpty(legacy.teacherDateAvailability),
+    studentDateAvailability: arrayOrEmpty(legacy.studentDateAvailability),
     studentSubjectRequests: arrayOrEmpty(legacy.studentSubjectRequests),
     studentTeacherPreferences: arrayOrEmpty(legacy.studentTeacherPreferences),
     studentTeacherCompatibilities: arrayOrEmpty(legacy.studentTeacherCompatibilities),

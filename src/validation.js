@@ -11,6 +11,7 @@ export function validateDb(db) {
   validateSupportLevels(db, issues);
   validateTimeSlots(db, issues);
   validateReferences(db, issues);
+  validateDateAvailability(db, issues);
   validateDuplicates(db, issues);
   validateLessonRequests(db, issues);
   validateConfirmedAssignments(db, issues);
@@ -75,6 +76,25 @@ function validateReferences(db, issues) {
   validateRefTable(db.scheduleAssignments, ["scheduleSolutionId", "teacherId", "studentId", "subjectId", "timeSlotId"], sets, issues, "scheduleAssignments");
 }
 
+function validateDateAvailability(db, issues) {
+  const teacherIds = new Set(db.teachers.map((item) => item.id));
+  const studentIds = new Set(db.students.map((item) => item.id));
+  const slotIds = new Set(db.timeSlots.map((item) => item.id));
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+  for (const row of db.teacherDateAvailability || []) {
+    if (!teacherIds.has(row.teacherId)) issues.push("講師の日付ごとの授業可能時間に、登録されていない講師が含まれています。");
+    if (!datePattern.test(String(row.date || ""))) issues.push("講師の日付ごとの授業可能時間に、日付形式が不正なデータがあります。");
+    if (!slotIds.has(row.lessonTimeSlotId)) issues.push("講師の日付ごとの授業可能時間に、使えない時間帯が含まれています。");
+  }
+
+  for (const row of db.studentDateAvailability || []) {
+    if (!studentIds.has(row.studentId)) issues.push("生徒の日付ごとの授業可能時間に、登録されていない生徒が含まれています。");
+    if (!datePattern.test(String(row.date || ""))) issues.push("生徒の日付ごとの授業可能時間に、日付形式が不正なデータがあります。");
+    if (!slotIds.has(row.lessonTimeSlotId)) issues.push("生徒の日付ごとの授業可能時間に、使えない時間帯が含まれています。");
+  }
+}
+
 function validateLessonRequests(db, issues) {
   const studentIds = new Set(db.students.map((item) => item.id));
   const subjectIds = new Set(db.subjects.map((item) => item.id));
@@ -131,6 +151,8 @@ function validateDuplicates(db, issues) {
   assertUnique(db.studentSubjectRequests, ["studentId", "subjectId"], issues, "studentSubjectRequests");
   assertUnique(db.studentTeacherPreferences, ["studentId", "teacherId", "preferenceType"], issues, "studentTeacherPreferences");
   assertUnique(db.studentTeacherCompatibilities || [], ["studentId", "teacherId"], issues, "studentTeacherCompatibilities");
+  assertUnique(db.teacherDateAvailability || [], ["teacherId", "date", "lessonTimeSlotId"], issues, "teacherDateAvailability");
+  assertUnique(db.studentDateAvailability || [], ["studentId", "date", "lessonTimeSlotId"], issues, "studentDateAvailability");
 }
 
 function validateLockedAssignments(db, issues) {

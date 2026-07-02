@@ -1,7 +1,7 @@
 import { genders, tabs, weekdays, now, uid } from "./src/constants.js";
 import { buildSampleDb } from "./src/sampleData.js";
 import { createConfirmedAssignmentsFromSolution, generateScheduleSolutions, summarizeTeachers } from "./src/scheduler.js";
-import { cloneLessonRequestRecord, exportDb, importDb, loadDb, resetDb, saveDb } from "./src/storage.js";
+import { cloneLessonRequestRecord, exportDb, importDb, loadDb, mergeDateAvailabilityRows, resetDb, saveDb } from "./src/storage.js";
 import { generatorReadiness } from "./src/validation.js";
 
 let db = loadDb();
@@ -22,6 +22,7 @@ let ui = {
   teacherFilters: { search: "", subjectId: "", gender: "", dayOfWeek: "", missingOnly: false },
   studentFilters: { search: "", subjectId: "", supportLevel: "", requestState: "", missingAvailabilityOnly: false, noActiveRequestsOnly: false }
 };
+let modalState = null;
 
 init();
 
@@ -295,6 +296,7 @@ function renderGeneratorPage() {
           <div class="checklist">
             ${checklist.map((item) => `<div class="check-item ${item.done ? "done" : "todo"}"><span class="check-mark">${item.done ? "✓" : "!"}</span><div><strong>${item.label}</strong><div class="muted">${item.done ? item.success : item.hint}</div></div></div>`).join("")}
           </div>
+          <div class="helper-text">講師の授業可能日: ${teacherDateAvailabilityDayCount()}日 / 生徒の授業可能日: ${studentDateAvailabilityDayCount()}日</div>
           ${hints.length ? `<div class="callout warn slim"><strong>次にやること</strong><div class="stack">${hints.map((issue) => `<div>${escapeHtml(issue)}</div>`).join("")}</div></div>` : `<div class="callout success slim"><strong>準備がそろいました</strong><div>日程案を作成して、候補を比べてみましょう。</div></div>`}
         </div>
       </section>
@@ -451,9 +453,21 @@ function renderTeacherForm(teacher) {
         <summary>現在担当している生徒</summary>
         ${renderCurrentAssignmentsEditor(current.id)}
       </details>
+      <div class="card">
+        <div class="calendar-entry">
+          <div>
+            <h4 class="card-title">授業できる時間</h4>
+            <p class="section-copy">日付ごとの授業可能時間はカレンダーで登録できます。曜日ごとの時間は詳細設定に残しています。</p>
+            <div class="pill-row">
+              <span class="tag">${teacherDateAvailabilitySummary(current.id)}</span>
+            </div>
+          </div>
+          <button class="secondary-btn" type="button" data-action="open-date-availability" data-entity-type="teacher" data-owner-id="${current.id}">授業できる時間を設定</button>
+        </div>
+      </div>
       <details class="card details-card">
-        <summary>授業できる時間を設定</summary>
-        <p class="section-copy">将来はカレンダー形式に移行予定です。いまは既存グリッドで入力できます。</p>
+        <summary>現在の自動作成で使う曜日ごとの時間</summary>
+        <p class="section-copy">日付ベースの作成は次のフェーズで対応予定です。今の自動作成では、こちらの曜日ごとの時間を使います。</p>
         ${renderAvailabilityEditor("teacher", current.id)}
       </details>
       <div class="card">
@@ -509,9 +523,21 @@ function renderStudentForm(student) {
           <small class="helper-text">1: 避けたい / 2: やや避けたい / 3: 普通 / 4: 合う / 5: とても合う</small>
         </div>
       </details>
+      <div class="card">
+        <div class="calendar-entry">
+          <div>
+            <h4 class="card-title">授業できる時間</h4>
+            <p class="section-copy">通える日付と時間帯はカレンダーで登録できます。曜日ごとの時間は詳細設定に残しています。</p>
+            <div class="pill-row">
+              <span class="tag">${studentDateAvailabilitySummary(current.id)}</span>
+            </div>
+          </div>
+          <button class="secondary-btn" type="button" data-action="open-date-availability" data-entity-type="student" data-owner-id="${current.id}">授業できる時間を設定</button>
+        </div>
+      </div>
       <details class="card details-card">
-        <summary>授業できる時間を設定</summary>
-        <p class="section-copy">将来はカレンダー形式に移行予定です。いまは既存グリッドで入力できます。</p>
+        <summary>現在の自動作成で使う曜日ごとの時間</summary>
+        <p class="section-copy">今の自動作成では、こちらの曜日ごとの時間を使います。</p>
         ${renderAvailabilityEditor("student", current.id)}
       </details>
       <div class="card">
@@ -910,6 +936,7 @@ function handleAction(action, payload) {
   if (action === "add-student") return addStudent();
   if (action === "close-student-drawer") return requestCloseDrawer();
   if (action === "delete-student") return removeStudent(payload.id);
+  if (action === "open-date-availability") return openDateAvailabilityModal(payload.entityType, payload.ownerId);
   if (action === "clear-teacher-filters") return clearTeacherFilters();
   if (action === "clear-student-filters") return clearStudentFilters();
   if (action === "go-generator") {
@@ -1059,6 +1086,7 @@ function removeTeacher(id) {
   db.teachers = db.teachers.filter((item) => item.id !== id);
   db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== id);
   db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => item.teacherId !== id);
+  db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => item.teacherId !== id);
   db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.teacherId !== id);
   db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.teacherId !== id);
   db.studentTeacherCompatibilities = db.studentTeacherCompatibilities.filter((item) => item.teacherId !== id);
@@ -1070,6 +1098,7 @@ function removeStudent(id) {
   if (!window.confirm("この生徒を削除します。")) return;
   db.students = db.students.filter((item) => item.id !== id);
   db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== id);
+  db.studentDateAvailability = db.studentDateAvailability.filter((item) => item.studentId !== id);
   db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== id);
   db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== id);
   db.confirmedAssignments = db.confirmedAssignments.filter((item) => item.studentId !== id);
@@ -1136,6 +1165,40 @@ function copyAvailabilityFromPeer(entityType, ownerId, sourceId) {
   db[collectionName] = db[collectionName].filter((item) => item[ownerKey] !== ownerId);
   source.forEach((item) => db[collectionName].push({ id: uid("availability-copy"), [ownerKey]: ownerId, timeSlotId: item.timeSlotId, availabilityLevel: item.availabilityLevel }));
   persist();
+}
+
+function getDateAvailability(entityType, ownerId) {
+  const collectionName = entityType === "teacher" ? "teacherDateAvailability" : "studentDateAvailability";
+  const ownerKey = entityType === "teacher" ? "teacherId" : "studentId";
+  return db[collectionName].filter((item) => item[ownerKey] === ownerId);
+}
+
+function setDateAvailability(entityType, ownerId, rows) {
+  const collectionName = entityType === "teacher" ? "teacherDateAvailability" : "studentDateAvailability";
+  const ownerKey = entityType === "teacher" ? "teacherId" : "studentId";
+  db[collectionName] = db[collectionName].filter((item) => item[ownerKey] !== ownerId);
+  db[collectionName].push(...mergeDateAvailabilityRows([], rows, ownerKey));
+  persist();
+}
+
+function teacherDateAvailabilitySummary(teacherId) {
+  const rows = getDateAvailability("teacher", teacherId);
+  const dayCount = new Set(rows.map((item) => item.date)).size;
+  return rows.length ? `${dayCount}日 / ${rows.length}件の時間帯を登録済み` : "まだ日付ごとの時間は登録されていません";
+}
+
+function studentDateAvailabilitySummary(studentId) {
+  const rows = getDateAvailability("student", studentId);
+  const dayCount = new Set(rows.map((item) => item.date)).size;
+  return rows.length ? `${dayCount}日 / ${rows.length}件の時間帯を登録済み` : "まだ日付ごとの時間は登録されていません";
+}
+
+function teacherDateAvailabilityDayCount() {
+  return new Set((db.teacherDateAvailability || []).map((item) => item.date)).size;
+}
+
+function studentDateAvailabilityDayCount() {
+  return new Set((db.studentDateAvailability || []).map((item) => item.date)).size;
 }
 
 function addCurrentAssignment(teacherId) {
@@ -1236,6 +1299,8 @@ function deleteSlot(id) {
   db.timeSlots = db.timeSlots.filter((item) => !deletedSlotIds.has(item.id));
   db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => !deletedSlotIds.has(item.timeSlotId));
   db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => !deletedSlotIds.has(item.timeSlotId));
+  db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => !deletedSlotIds.has(item.lessonTimeSlotId));
+  db.studentDateAvailability = db.studentDateAvailability.filter((item) => !deletedSlotIds.has(item.lessonTimeSlotId));
   db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => !deletedSlotIds.has(item.timeSlotId));
   persist();
   render();
@@ -1734,6 +1799,7 @@ function discardUnsavedNewDrawerRecord() {
     db.teachers = db.teachers.filter((item) => item.id !== teacherId);
     db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== teacherId);
     db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => item.teacherId !== teacherId);
+    db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => item.teacherId !== teacherId);
     db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.teacherId !== teacherId);
     db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.teacherId !== teacherId);
     db = saveDb(db);
@@ -1743,6 +1809,7 @@ function discardUnsavedNewDrawerRecord() {
     const studentId = ui.activeDrawerEntityId;
     db.students = db.students.filter((item) => item.id !== studentId);
     db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== studentId);
+    db.studentDateAvailability = db.studentDateAvailability.filter((item) => item.studentId !== studentId);
     db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== studentId);
     db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== studentId);
     db.confirmedAssignments = db.confirmedAssignments.filter((item) => item.studentId !== studentId);
@@ -1885,6 +1952,8 @@ function humanizeIssue(issue) {
   if (text.includes("対応教科")) return "担当教科が未設定の講師がいます。教科を選んでください。";
   if (text.includes("studentAvailabilitySlots")) return "古い生徒データに紐づいた可能時間が残っています。整理または初期化が必要です。";
   if (text.includes("teacherAvailabilitySlots")) return "古い講師データに紐づいた可能時間が残っています。整理または初期化が必要です。";
+  if (text.includes("日付ごとの授業可能時間") && text.includes("講師")) return "講師のカレンダー入力に古い参照や不正な日付があります。登録内容を見直してください。";
+  if (text.includes("日付ごとの授業可能時間") && text.includes("生徒")) return "生徒のカレンダー入力に古い参照や不正な日付があります。登録内容を見直してください。";
   if (text.includes("lessonRequests")) return "授業希望の一部に古い参照や入力不足があります。授業希望カードを見直してください。";
   if (text.includes("confirmedAssignments")) return "固定済みの予定に古い参照や条件違反があります。結果画面で見直してください。";
   return text;
@@ -2147,6 +2216,183 @@ function studentTeacherCompatibility(studentId, teacherId) {
   return db.studentTeacherCompatibilities?.find((item) => item.studentId === studentId && item.teacherId === teacherId)?.score || 3;
 }
 
+function openDateAvailabilityModal(entityType, ownerId) {
+  const entity = entityType === "teacher"
+    ? db.teachers.find((item) => item.id === ownerId)
+    : db.students.find((item) => item.id === ownerId);
+  if (!entity) return;
+  modalState = {
+    type: "date-availability",
+    entityType,
+    ownerId,
+    month: startOfMonth(new Date()),
+    selectedDates: [],
+    draftRows: getDateAvailability(entityType, ownerId).map((item) => ({ ...item }))
+  };
+  renderDateAvailabilityModal();
+}
+
+function renderDateAvailabilityModal() {
+  if (!modalState || modalState.type !== "date-availability") return;
+  const entity = modalState.entityType === "teacher"
+    ? db.teachers.find((item) => item.id === modalState.ownerId)
+    : db.students.find((item) => item.id === modalState.ownerId);
+  if (!entity) {
+    closeDateAvailabilityModal();
+    return;
+  }
+  const title = `${modalState.entityType === "teacher" ? "講師" : "生徒"}の授業できる時間`;
+  openModal(title, buildDateAvailabilityModalContent(entity), bindDateAvailabilityModalEvents);
+}
+
+function buildDateAvailabilityModalContent(entity) {
+  const monthStart = ensureMonthDate(modalState.month);
+  const selectedDates = new Set(modalState.selectedDates || []);
+  const rowsByDate = groupDateAvailabilityRows(modalState.draftRows || []);
+  const selectionLabel = modalState.selectedDates.length
+    ? modalState.selectedDates.map((date) => formatShortDate(date)).join(" / ")
+    : "まだ選択されていません";
+  return `
+    <div class="stack calendar-modal">
+      <div class="calendar-toolbar">
+        <div>
+          <strong>${escapeHtml(entity.name || "未設定")}</strong>
+          <div class="muted">${modalState.entityType === "teacher" ? "講師" : "生徒"}の授業可能日を選びます</div>
+        </div>
+        <div class="action-row">
+          <button class="ghost-btn" type="button" data-calendar-nav="-1">前月</button>
+          <strong>${monthStart.getFullYear()}年${monthStart.getMonth() + 1}月</strong>
+          <button class="ghost-btn" type="button" data-calendar-nav="1">次月</button>
+          <button class="ghost-btn" type="button" data-calendar-today="true">今日へ戻る</button>
+        </div>
+      </div>
+      <div class="calendar-layout">
+        <section class="calendar-board">
+          <div class="calendar-weekdays">${["月", "火", "水", "木", "金", "土", "日"].map((day) => `<div>${day}</div>`).join("")}</div>
+          <div class="calendar-grid">
+            ${buildCalendarCells(monthStart).map((cell) => {
+              const rowItems = rowsByDate.get(cell.date) || [];
+              const visible = rowItems.slice(0, 3);
+              const hiddenCount = Math.max(0, rowItems.length - visible.length);
+              const classNames = [
+                "calendar-day",
+                cell.inMonth ? "" : "outside",
+                cell.isToday ? "today" : "",
+                selectedDates.has(cell.date) ? "selected" : ""
+              ].filter(Boolean).join(" ");
+              return `
+                <button class="${classNames}" type="button" data-calendar-date="${cell.date}">
+                  <span class="calendar-day-number">${cell.day}</span>
+                  <span class="calendar-day-slots">
+                    ${visible.map((item) => `<span class="calendar-slot-pill">${escapeHtml(slotTimeLabel(item.lessonTimeSlotId))}</span>`).join("")}
+                    ${hiddenCount ? `<span class="calendar-slot-more">ほか${hiddenCount}件</span>` : ""}
+                  </span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+        </section>
+        <section class="calendar-sidepanel">
+          <div class="card flat-card">
+            <h4 class="card-title">選択中の日付</h4>
+            <div class="muted">${escapeHtml(selectionLabel)}</div>
+          </div>
+          <div class="card flat-card">
+            <h4 class="card-title">時間帯を選ぶ</h4>
+            <div class="checkbox-grid stacked-chip-grid">
+              ${lessonTimeSlotOptions().map((slot) => `
+                <label class="chip slot-choice">
+                  <input type="checkbox" name="calendar-slot" value="${slot.id}" />
+                  <span>${escapeHtml(slot.label)}</span>
+                </label>
+              `).join("") || `<div class="muted">時間帯を先に登録してください。</div>`}
+            </div>
+            <div class="helper-text">日付を複数選んでから、まとめて追加できます。</div>
+          </div>
+          <div class="action-row calendar-actions">
+            <button class="secondary-btn" type="button" data-calendar-bulk-add="true">一括追加</button>
+            <button class="ghost-btn" type="button" data-calendar-clear-days="true">選択日の時間を消去</button>
+            <button class="ghost-btn" type="button" data-calendar-clear-selection="true">選択解除</button>
+          </div>
+          <div class="action-row drawer-form-actions modal-sticky-actions">
+            <button class="ghost-btn" type="button" data-calendar-cancel="true">閉じる</button>
+            <button class="primary-btn" type="button" data-calendar-save="true">保存</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function bindDateAvailabilityModalEvents() {
+  document.querySelectorAll("[data-calendar-nav]").forEach((button) => button.addEventListener("click", () => {
+    modalState.month = addMonths(ensureMonthDate(modalState.month), Number(button.dataset.calendarNav || 0));
+    renderDateAvailabilityModal();
+  }));
+  document.querySelector("[data-calendar-today='true']")?.addEventListener("click", () => {
+    modalState.month = startOfMonth(new Date());
+    renderDateAvailabilityModal();
+  });
+  document.querySelectorAll("[data-calendar-date]").forEach((button) => button.addEventListener("click", () => {
+    toggleCalendarDate(button.dataset.calendarDate);
+    renderDateAvailabilityModal();
+  }));
+  document.querySelector("[data-calendar-bulk-add='true']")?.addEventListener("click", addCalendarSlotsToSelectedDates);
+  document.querySelector("[data-calendar-clear-days='true']")?.addEventListener("click", clearCalendarSelectedDates);
+  document.querySelector("[data-calendar-clear-selection='true']")?.addEventListener("click", () => {
+    modalState.selectedDates = [];
+    renderDateAvailabilityModal();
+  });
+  document.querySelector("[data-calendar-cancel='true']")?.addEventListener("click", closeDateAvailabilityModal);
+  document.querySelector("[data-calendar-save='true']")?.addEventListener("click", saveDateAvailabilityModal);
+}
+
+function toggleCalendarDate(date) {
+  const selected = new Set(modalState.selectedDates || []);
+  if (selected.has(date)) selected.delete(date);
+  else selected.add(date);
+  modalState.selectedDates = [...selected].sort();
+}
+
+function addCalendarSlotsToSelectedDates() {
+  const selectedDates = modalState.selectedDates || [];
+  const slotIds = Array.from(document.querySelectorAll('input[name="calendar-slot"]:checked')).map((input) => input.value);
+  if (!selectedDates.length || !slotIds.length) return;
+  const ownerKey = modalState.entityType === "teacher" ? "teacherId" : "studentId";
+  const additions = [];
+  selectedDates.forEach((date) => {
+    slotIds.forEach((lessonTimeSlotId) => {
+      additions.push({
+        id: uid("date-availability"),
+        [ownerKey]: modalState.ownerId,
+        date,
+        lessonTimeSlotId
+      });
+    });
+  });
+  modalState.draftRows = mergeDateAvailabilityRows(modalState.draftRows, additions, ownerKey);
+  renderDateAvailabilityModal();
+}
+
+function clearCalendarSelectedDates() {
+  const selectedDates = new Set(modalState.selectedDates || []);
+  if (!selectedDates.size) return;
+  modalState.draftRows = (modalState.draftRows || []).filter((item) => !selectedDates.has(item.date));
+  renderDateAvailabilityModal();
+}
+
+function saveDateAvailabilityModal() {
+  if (!modalState || modalState.type !== "date-availability") return;
+  setDateAvailability(modalState.entityType, modalState.ownerId, modalState.draftRows || []);
+  closeDateAvailabilityModal();
+  render();
+}
+
+function closeDateAvailabilityModal() {
+  modalState = null;
+  closeModal();
+}
+
 function timeBands() {
   const rows = new Map();
   timeSlotsForTemplate(ui.selectedTemplateId).forEach((slot) => {
@@ -2176,6 +2422,13 @@ function timeBandByKey(key) {
   return timeBands().find((item) => item.key === key) || null;
 }
 
+function lessonTimeSlotOptions() {
+  return timeBands().filter((band) => band.isActive).map((band) => {
+    const slot = timeSlotsForTemplate(ui.selectedTemplateId).find((item) => bandKey(item) === band.key);
+    return { id: slot?.id || "", label: `${band.startTime}-${band.endTime}` };
+  }).filter((item) => item.id);
+}
+
 function teacherTags(ids = [], emptyLabel = "なし") {
   if (!ids.length) return `<span class="tag">${escapeHtml(emptyLabel)}</span>`;
   return ids.map((id) => `<span class="tag">${escapeHtml(teacherName(id))}</span>`).join("");
@@ -2183,6 +2436,65 @@ function teacherTags(ids = [], emptyLabel = "なし") {
 
 function genderOptions(value) {
   return genders.map((item) => `<option value="${item.value}" ${item.value === value ? "selected" : ""}>${item.label}</option>`).join("");
+}
+
+function groupDateAvailabilityRows(rows) {
+  const map = new Map();
+  [...(rows || [])]
+    .sort((a, b) => a.date.localeCompare(b.date) || slotTimeLabel(a.lessonTimeSlotId).localeCompare(slotTimeLabel(b.lessonTimeSlotId)))
+    .forEach((item) => {
+      if (!map.has(item.date)) map.set(item.date, []);
+      map.get(item.date).push(item);
+    });
+  return map;
+}
+
+function buildCalendarCells(monthStart) {
+  const start = new Date(monthStart);
+  const offset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - offset);
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return {
+      date: formatDateKey(date),
+      day: date.getDate(),
+      inMonth: date.getMonth() === monthStart.getMonth(),
+      isToday: formatDateKey(date) === formatDateKey(new Date())
+    };
+  });
+}
+
+function ensureMonthDate(value) {
+  return startOfMonth(value instanceof Date ? value : new Date(value));
+}
+
+function startOfMonth(value) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(value, amount) {
+  return new Date(value.getFullYear(), value.getMonth() + amount, 1);
+}
+
+function formatDateKey(value) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatShortDate(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function slotTimeLabel(id) {
+  const slot = db.timeSlots.find((item) => item.id === id);
+  if (!slot) return "未設定";
+  return `${slot.startTime}-${slot.endTime}`;
 }
 
 function safeJson(text) {
@@ -2210,6 +2522,7 @@ function openModal(title, content, onReady) {
 }
 
 function closeModal() {
+  modalState = null;
   document.querySelector(".modal-backdrop")?.remove();
 }
 
