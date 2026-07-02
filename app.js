@@ -58,8 +58,8 @@ function render() {
 function renderSidebar() {
   const saveStatus = document.getElementById("saveStatus");
   saveStatus.innerHTML = db.lastSavedAt
-    ? `<div class="callout success">最終保存: <span class="mono">${formatDateTime(db.lastSavedAt)}</span></div>`
-    : `<div class="callout">まだ保存前です</div>`;
+    ? `<div class="stat-card"><span>保存状態</span><strong class="mono">${formatDateTime(db.lastSavedAt)}</strong><div class="status-inline"><span class="status-dot success"></span><small>ローカル保存済み</small></div></div>`
+    : `<div class="stat-card"><span>保存状態</span><strong>未保存</strong><div class="status-inline"><span class="status-dot warning"></span><small>まだ保存前です</small></div></div>`;
   const summary = document.getElementById("summaryStats");
   const stats = {
     講師: db.teachers.length,
@@ -68,7 +68,7 @@ function renderSidebar() {
     有効枠: activeSlots().length,
     実行履歴: db.scheduleRuns.length
   };
-  summary.innerHTML = Object.entries(stats).map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join("");
+  summary.innerHTML = Object.entries(stats).map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("");
 }
 
 function renderNav() {
@@ -103,18 +103,24 @@ function renderTeachersPage() {
     <div class="layout-two">
       <section class="panel">
         <div class="panel-header">
-          <h3>講師一覧</h3>
+          <div>
+            <h3>講師一覧</h3>
+            <p class="section-copy">担当教科と稼働可能時間を見ながら、講師情報を整理します。</p>
+          </div>
           <button class="primary-btn" type="button" data-action="add-teacher">追加</button>
         </div>
         <div class="panel-body">
           <div class="entity-list">
-            ${db.teachers.length ? db.teachers.map(renderTeacherListItem).join("") : `<div class="callout warn">講師が未登録です。</div>`}
+            ${db.teachers.length ? db.teachers.map(renderTeacherListItem).join("") : `<div class="empty-state"><div><strong>講師がまだ登録されていません</strong><div class="muted">右上の追加ボタンから最初の講師を登録できます。</div></div></div>`}
           </div>
         </div>
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h3>${selected ? "講師編集" : "講師追加"}</h3>
+          <div>
+            <h3>${selected ? "講師編集" : "講師追加"}</h3>
+            <p class="section-copy">基本情報、担当教科、既存担当、可能時間をまとめて管理します。</p>
+          </div>
           ${selected ? `<button class="danger-btn" type="button" data-action="delete-teacher" data-id="${selected.id}">削除</button>` : ""}
         </div>
         <div class="panel-body">${renderTeacherForm(selected)}</div>
@@ -129,18 +135,24 @@ function renderStudentsPage() {
     <div class="layout-two">
       <section class="panel">
         <div class="panel-header">
-          <h3>生徒一覧</h3>
+          <div>
+            <h3>生徒一覧</h3>
+            <p class="section-copy">受講希望、サポート度、可能時間を生徒ごとに確認できます。</p>
+          </div>
           <button class="primary-btn" type="button" data-action="add-student">追加</button>
         </div>
         <div class="panel-body">
           <div class="entity-list">
-            ${db.students.length ? db.students.map(renderStudentListItem).join("") : `<div class="callout warn">生徒が未登録です。</div>`}
+            ${db.students.length ? db.students.map(renderStudentListItem).join("") : `<div class="empty-state"><div><strong>生徒がまだ登録されていません</strong><div class="muted">追加ボタンから生徒情報と受講希望を登録してください。</div></div></div>`}
           </div>
         </div>
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h3>${selected ? "生徒編集" : "生徒追加"}</h3>
+          <div>
+            <h3>${selected ? "生徒編集" : "生徒追加"}</h3>
+            <p class="section-copy">受講希望カードと可能時間グリッドを同じ画面で管理します。</p>
+          </div>
           ${selected ? `<button class="danger-btn" type="button" data-action="delete-student" data-id="${selected.id}">削除</button>` : ""}
         </div>
         <div class="panel-body">${renderStudentForm(selected)}</div>
@@ -165,11 +177,27 @@ function renderSlotsPage() {
           <button class="primary-btn" type="button" data-action="add-template">テンプレート追加</button>
           ${selectedTemplate ? `<button class="secondary-btn" type="button" data-action="rename-template" data-id="${selectedTemplate.id}">名称変更</button>` : ""}
         </div>
+        <div class="card">
+          <div class="section-copy">曜日別プレビュー</div>
+          <div class="lesson-request-grid">
+            ${weekdays.map((day, index) => `
+              <div class="lesson-request-card">
+                <header><div><h5>${day}</h5><p class="muted">${slots.filter((slot) => slot.dayOfWeek === index + 1).length} スロット</p></div></header>
+                <div class="lesson-request-meta">
+                  ${slots.filter((slot) => slot.dayOfWeek === index + 1).map((slot) => `<span class="tag">${escapeHtml(slot.startTime)}-${escapeHtml(slot.endTime)}</span>`).join("") || `<span class="tag">未設定</span>`}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
       </section>
       <div class="layout-two">
         <section class="panel">
           <div class="panel-header">
-            <h3>時間帯一覧</h3>
+            <div>
+              <h3>時間帯一覧</h3>
+              <p class="section-copy">有効な時間帯だけが可能時間グリッドと割当に使われます。</p>
+            </div>
             <button class="primary-btn" type="button" data-action="add-slot">スロット追加</button>
           </div>
           <div class="panel-body">
@@ -181,7 +209,10 @@ function renderSlotsPage() {
         </section>
         <section class="panel">
           <div class="panel-header">
-            <h3>科目マスタ</h3>
+            <div>
+              <h3>科目マスタ</h3>
+              <p class="section-copy">教科表示順と有効状態を整理します。</p>
+            </div>
             <div class="action-row">
               <button class="secondary-btn" type="button" data-action="export-db">DB出力</button>
               <button class="secondary-btn" type="button" data-action="import-db">DB取込</button>
@@ -208,16 +239,20 @@ function renderGeneratorPage() {
     <div class="stack">
       <section class="summary-strip">
         <div class="summary-grid">
-          <div class="card"><div class="muted">講師</div><strong>${db.teachers.length}</strong></div>
-          <div class="card"><div class="muted">生徒</div><strong>${db.students.length}</strong></div>
-          <div class="card"><div class="muted">有効スロット</div><strong>${activeSlots().length}</strong></div>
-          <div class="card"><div class="muted">実行可能性</div><strong>${issues.length ? "要確認" : "準備完了"}</strong></div>
+          <div class="kpi-card"><span>講師数</span><strong>${db.teachers.length}</strong></div>
+          <div class="kpi-card"><span>生徒数</span><strong>${db.students.length}</strong></div>
+          <div class="kpi-card"><span>受講希望数</span><strong>${db.lessonRequests.filter((item) => item.status !== "inactive").length}</strong></div>
+          <div class="kpi-card"><span>有効スロット数</span><strong>${activeSlots().length}</strong></div>
+          <div class="kpi-card"><span>要確認件数</span><strong>${issues.length}</strong></div>
         </div>
       </section>
-      ${issues.length ? `<div class="callout warn">${issues.map((issue) => `<div>${escapeHtml(issue)}</div>`).join("")}</div>` : `<div class="callout success">生成に必要な基本条件は満たしています。</div>`}
+      ${issues.length ? `<div class="callout warn"><strong>生成前に確認したい項目があります</strong><div class="stack">${issues.map((issue) => `<div>${escapeHtml(issue)}</div>`).join("")}</div></div>` : `<div class="callout success"><strong>準備完了</strong><div>生成に必要な基本条件は満たしています。</div></div>`}
       <section class="panel">
         <div class="panel-header">
-          <h3>生成設定</h3>
+          <div>
+            <h3>生成設定</h3>
+            <p class="section-copy">候補数と固定済み割当の扱いを選んで生成します。</p>
+          </div>
           <button class="primary-btn" type="button" data-action="generate-schedule" ${issues.length ? "disabled" : ""}>作成する</button>
         </div>
         <div class="panel-body">
@@ -238,26 +273,24 @@ function renderGeneratorPage() {
         </div>
       </section>
       <section class="panel">
-        <div class="panel-header"><h3>直近の生成結果</h3></div>
+        <div class="panel-header"><div><h3>直近の生成結果</h3><p class="section-copy">最新の実行回から候補案をすぐ確認できます。</p></div></div>
         <div class="panel-body">
           ${selectedRun ? `
-            <div class="stack">
+            <div class="card-grid">
               <div class="card">
                 <div class="muted">実行日時</div>
                 <div class="mono">${formatDateTime(selectedRun.createdAt)}</div>
-                <div class="muted">状態: ${escapeHtml(selectedRun.status)}</div>
+                <div class="tag">状態 ${escapeHtml(selectedRun.status)}</div>
               </div>
-              ${solutions.length ? `
-                <table class="simple-table">
-                  <thead><tr><th>順位</th><th>総合スコア</th><th>割当</th><th>未割当</th><th></th></tr></thead>
-                  <tbody>${solutions.map((solution) => `
-                    <tr>
-                      <td>${solution.rank}</td><td>${solution.totalScore}</td><td>${solution.assignedCount}</td><td>${solution.unassignedCount}</td>
-                      <td><button class="ghost-btn" type="button" data-action="open-solution" data-id="${solution.id}">確認</button></td>
-                    </tr>
-                  `).join("")}</tbody>
-                </table>
-              ` : `<div class="callout warn">候補案がありません。</div>`}
+              ${solutions.map((solution) => `
+                <div class="lesson-request-card">
+                  <header><div><h5>候補 ${solution.rank}</h5><p class="muted">総合スコア ${solution.totalScore}</p></div><button class="ghost-btn" type="button" data-action="open-solution" data-id="${solution.id}">確認</button></header>
+                  <div class="lesson-request-meta">
+                    <span class="tag">割当 ${solution.assignedCount}</span>
+                    <span class="tag">未割当 ${solution.unassignedCount}</span>
+                  </div>
+                </div>
+              `).join("") || `<div class="callout warn">候補案がありません。</div>`}
             </div>
           ` : `<div class="callout">まだ生成していません。</div>`}
         </div>
@@ -276,7 +309,10 @@ function renderResultsPage() {
     <div class="split">
       <section class="panel">
         <div class="panel-header">
-          <h3>生成結果</h3>
+          <div>
+            <h3>生成結果</h3>
+            <p class="section-copy">候補の詳細、未割当、講師負担、時間帯混雑を一画面で確認します。</p>
+          </div>
           ${selectedSolution ? `
             <div class="action-row">
               <button class="secondary-btn" type="button" data-action="regenerate-with-locks" data-id="${selectedSolution.id}">固定を維持して再生成</button>
@@ -287,7 +323,7 @@ function renderResultsPage() {
         <div class="panel-body">${selectedSolution ? renderSolutionDetail(selectedSolution) : `<div class="callout warn">表示する候補案がありません。</div>`}</div>
       </section>
       <section class="panel">
-        <div class="panel-header"><h3>候補一覧</h3></div>
+        <div class="panel-header"><div><h3>候補一覧</h3><p class="section-copy">候補案を切り替えて比較できます。</p></div></div>
         <div class="panel-body">
           <div class="field">
             <label for="runSelect">生成回</label>
@@ -343,10 +379,9 @@ function renderTeacherForm(teacher) {
         <legend>対応教科</legend>
         <div class="checkbox-grid">${activeSubjects().map((subject) => checkboxChip("teacher-subject", subject.id, subject.name, teacherHasSubject(current.id, subject.id))).join("")}</div>
       </fieldset>
-      <label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(current.memo || "")}</textarea></label>
-      <label class="field"><span>拡張用フィールド(JSON)</span><textarea name="extraJson">${escapeHtml(JSON.stringify(current.extraJson || {}, null, 2))}</textarea></label>
+      <div class="card"><h4 class="card-title">メモ・補足</h4><label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(current.memo || "")}</textarea></label><label class="field"><span>拡張用フィールド(JSON)</span><textarea name="extraJson">${escapeHtml(JSON.stringify(current.extraJson || {}, null, 2))}</textarea></label></div>
       <div class="card"><h4 class="card-title">現在担当している生徒</h4>${renderCurrentAssignmentsEditor(current.id)}</div>
-      <div class="card"><h4 class="card-title">可能時間</h4>${renderAvailabilityEditor("teacher", current.id)}</div>
+      <div class="card"><h4 class="card-title">可能時間</h4><p class="section-copy">広い横幅で週間パターンを確認しながら入力できます。</p>${renderAvailabilityEditor("teacher", current.id)}</div>
       <div class="action-row"><button class="primary-btn" type="submit">保存</button></div>
     </form>
   `;
@@ -373,13 +408,13 @@ function renderStudentForm(student) {
         <fieldset class="field"><legend>希望の先生</legend><div class="checkbox-grid">${db.teachers.map((teacher) => checkboxChip("student-pref-preferred", teacher.id, teacher.name, studentPrefersTeacher(current.id, teacher.id, "preferred"))).join("")}</div></fieldset>
         <fieldset class="field"><legend>希望しない先生</legend><div class="checkbox-grid">${db.teachers.map((teacher) => checkboxChip("student-pref-blocked", teacher.id, teacher.name, studentPrefersTeacher(current.id, teacher.id, "blocked"))).join("")}</div></fieldset>
       </div>
-      <label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(current.memo || "")}</textarea></label>
-      <label class="field"><span>拡張用フィールド(JSON)</span><textarea name="extraJson">${escapeHtml(JSON.stringify(current.extraJson || {}, null, 2))}</textarea></label>
+      <div class="card"><h4 class="card-title">メモ・補足</h4><label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(current.memo || "")}</textarea></label><label class="field"><span>拡張用フィールド(JSON)</span><textarea name="extraJson">${escapeHtml(JSON.stringify(current.extraJson || {}, null, 2))}</textarea></label></div>
       <div class="card">
         <h4 class="card-title">受講希望設定</h4>
+        <p class="section-copy">教科ごとの週回数、優先度、状態をカードで管理します。</p>
         ${renderLessonRequestSettings(current.id, lessonRequests)}
       </div>
-      <div class="card"><h4 class="card-title">可能時間</h4>${renderAvailabilityEditor("student", current.id)}</div>
+      <div class="card"><h4 class="card-title">可能時間</h4><p class="section-copy">広いグリッドで週全体の可用時間をまとめて編集します。</p>${renderAvailabilityEditor("student", current.id)}</div>
       <div class="action-row"><button class="primary-btn" type="submit">保存</button></div>
     </form>
   `;
@@ -389,28 +424,38 @@ function renderLessonRequestSettings(studentId, requests) {
   const subjectIds = studentRequestedSubjects(studentId);
   if (!subjectIds.length) return `<div class="callout warn">希望教科を選ぶと受講希望設定が表示されます。</div>`;
   return `
-    <table class="simple-table">
-      <thead><tr><th>教科</th><th>週回数</th><th>コマ数</th><th>優先度</th><th>状態</th></tr></thead>
-      <tbody>
-        ${subjectIds.map((subjectId) => {
-          const request = requests.find((item) => item.subjectId === subjectId) || defaultLessonRequestDraft(studentId, subjectId);
-          return `
-            <tr>
-              <td>${escapeHtml(subjectName(subjectId))}</td>
-              <td><input type="number" min="1" max="7" name="lessonRequest-${subjectId}-lessonsPerWeek" value="${request.lessonsPerWeek || 1}" /></td>
-              <td><input type="number" min="1" max="4" name="lessonRequest-${subjectId}-durationSlots" value="${request.durationSlots || 1}" /></td>
-              <td><input type="number" min="1" max="5" name="lessonRequest-${subjectId}-priority" value="${request.priority || 3}" /></td>
-              <td>
-                <select name="lessonRequest-${subjectId}-status">
-                  <option value="active" ${request.status !== "inactive" ? "selected" : ""}>active</option>
-                  <option value="inactive" ${request.status === "inactive" ? "selected" : ""}>inactive</option>
-                </select>
-              </td>
-            </tr>
-          `;
-        }).join("")}
-      </tbody>
-    </table>
+    <div class="lesson-request-grid">
+      ${subjectIds.map((subjectId) => {
+        const request = requests.find((item) => item.subjectId === subjectId) || defaultLessonRequestDraft(studentId, subjectId);
+        return `
+          <section class="lesson-request-card">
+            <header>
+              <div>
+                <h5>${escapeHtml(subjectName(subjectId))}</h5>
+                <p class="muted">${request.status === "inactive" ? "無効化中" : "生成対象"}</p>
+              </div>
+              <div class="lesson-request-actions">
+                <span class="tag">追加</span>
+                <span class="tag">編集</span>
+                <span class="tag">複製</span>
+                <span class="tag">${request.status === "inactive" ? "再有効化" : "無効化"}</span>
+              </div>
+            </header>
+            <div class="lesson-request-meta">
+              <span class="tag">希望講師 ${request.preferredTeacherIds?.length || 0}</span>
+              <span class="tag">NG講師 ${request.blockedTeacherIds?.length || 0}</span>
+              <span class="tag">${request.preferredGender || "性別指定なし"}</span>
+            </div>
+            <div class="lesson-request-fields">
+              <label class="field"><span>週回数</span><input type="number" min="1" max="7" name="lessonRequest-${subjectId}-lessonsPerWeek" value="${request.lessonsPerWeek || 1}" /></label>
+              <label class="field"><span>コマ数</span><input type="number" min="1" max="4" name="lessonRequest-${subjectId}-durationSlots" value="${request.durationSlots || 1}" /></label>
+              <label class="field"><span>優先度</span><input type="number" min="1" max="5" name="lessonRequest-${subjectId}-priority" value="${request.priority || 3}" /></label>
+              <label class="field"><span>状態</span><select name="lessonRequest-${subjectId}-status"><option value="active" ${request.status !== "inactive" ? "selected" : ""}>active</option><option value="inactive" ${request.status === "inactive" ? "selected" : ""}>inactive</option></select></label>
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -521,12 +566,13 @@ function renderSolutionDetail(solution) {
   return `
     <div class="stack">
       <div class="summary-grid">
-        <div class="card"><div class="muted">候補順位</div><strong>${solution.rank}</strong></div>
-        <div class="card"><div class="muted">総合スコア</div><strong>${solution.totalScore}</strong></div>
-        <div class="card"><div class="muted">割当人数</div><strong>${solution.assignedCount}</strong></div>
-        <div class="card"><div class="muted">未割当人数</div><strong>${solution.unassignedCount}</strong></div>
+        <div class="kpi-card"><span>候補順位</span><strong>${solution.rank}</strong></div>
+        <div class="kpi-card"><span>総合スコア</span><strong>${solution.totalScore}</strong></div>
+        <div class="kpi-card"><span>割当人数</span><strong>${solution.assignedCount}</strong></div>
+        <div class="kpi-card"><span>未割当人数</span><strong>${solution.unassignedCount}</strong></div>
+        <div class="kpi-card"><span>確定状態</span><strong>${db.confirmedSolutionId === solution.id ? "確定済み" : "未確定"}</strong></div>
       </div>
-      <div class="card-grid">
+      <div class="result-columns">
         <div class="card">
           <h4 class="card-title">未割当生徒</h4>
           ${unassigned.length ? `<table class="simple-table"><thead><tr><th>生徒</th><th>受講希望</th><th>理由</th></tr></thead><tbody>${unassigned.map((item) => `<tr><td>${escapeHtml(studentName(item.studentId))}</td><td>${escapeHtml(subjectName(lessonRequestById(item.lessonRequestId)?.subjectId))}</td><td>${(item.reasons || []).map((reason) => `${escapeHtml(reason.code)}: ${escapeHtml(reason.label)}`).join("<br>")}</td></tr>`).join("")}</tbody></table>` : `<div class="callout success">未割当はありません。</div>`}
@@ -534,6 +580,28 @@ function renderSolutionDetail(solution) {
         <div class="card">
           <h4 class="card-title">講師別サマリ</h4>
           <table class="simple-table"><thead><tr><th>講師</th><th>コマ数</th><th>担当人数</th><th>負担</th></tr></thead><tbody>${teacherSummary.map((item) => `<tr><td>${escapeHtml(item.teacherName)}</td><td>${item.slotCount}</td><td>${item.studentCount}</td><td>${item.load}</td></tr>`).join("")}</tbody></table>
+        </div>
+      </div>
+      <div class="card">
+        <h4 class="card-title">受講希望別の割当カード</h4>
+        <div class="lesson-request-grid">
+          ${assignments.map((assignment) => `
+            <article class="lesson-request-card">
+              <header>
+                <div>
+                  <h5>${escapeHtml(studentName(assignment.studentId))}</h5>
+                  <p class="muted">${escapeHtml(subjectName(assignment.subjectId))} / ${assignment.occurrenceIndex || 1}回目</p>
+                </div>
+                <span class="tag">スコア ${assignment.score}</span>
+              </header>
+              <div class="lesson-request-meta">
+                <span class="tag">${escapeHtml(teacherName(assignment.teacherId))}</span>
+                <span class="tag">${escapeHtml(slotLabel(assignment.timeSlotId))}</span>
+                ${assignment.isLocked ? `<span class="tag">固定済み</span>` : ""}
+              </div>
+              <div class="muted">${(assignment.scoreBreakdownJson || []).map((item) => `${item.label}: ${item.value}`).join(" / ")}</div>
+            </article>
+          `).join("")}
         </div>
       </div>
       <div class="card"><h4 class="card-title">曜日・時間帯ごとの割当表</h4>${renderAssignmentMatrix(assignments)}</div>
