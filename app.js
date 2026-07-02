@@ -36,8 +36,8 @@ let ui = {
   resultView: "students",
   dragActive: false,
   dragValue: null,
-  teacherFilters: { search: "", subjectId: "", gender: "", dayOfWeek: "", missingOnly: false },
-  studentFilters: { search: "", subjectId: "", supportLevel: "", requestState: "", missingAvailabilityOnly: false, noActiveRequestsOnly: false }
+  teacherFilters: { search: "" },
+  studentFilters: { search: "" }
 };
 let modalState = null;
 
@@ -421,17 +421,24 @@ function renderResultsPage() {
 
 function renderTeacherListItem(teacher) {
   const subjectNames = teacherSubjectNames(teacher.id);
+  const availabilitySummary = teacherDateAvailabilitySummary(teacher.id);
   return `
-    <button class="entity-item ${teacher.id === ui.selectedTeacherId ? "active" : ""}" type="button" data-select-teacher="${teacher.id}">
-      <div class="entity-title-row">
-        <h4>${escapeHtml(teacher.name)}</h4>
-        ${teacherHasMissingFields(teacher) ? `<span class="tag subtle-danger">未入力あり</span>` : ""}
+    <article class="entity-item ${teacher.id === ui.selectedTeacherId ? "active" : ""}">
+      <button class="entity-item-main" type="button" data-select-teacher="${teacher.id}">
+        <div class="entity-title-row">
+          <h4>${escapeHtml(teacher.name)}</h4>
+          ${teacherHasMissingFields(teacher) ? `<span class="tag subtle-danger">未入力あり</span>` : ""}
+        </div>
+        <div class="entity-meta">
+          <span class="tag">${genderLabel(teacher.gender)}</span>
+          <span class="tag">${subjectNames.join(" / ") || "教科未設定"}</span>
+        </div>
+      </button>
+      <div class="entity-actions">
+        <span class="tag">${escapeHtml(availabilitySummary)}</span>
+        <button class="ghost-btn" type="button" data-action="open-date-availability" data-entity-type="teacher" data-owner-id="${teacher.id}">時間設定</button>
       </div>
-      <div class="entity-meta">
-        <span class="tag">${genderLabel(teacher.gender)}</span>
-        <span class="tag">${subjectNames.join(" / ") || "教科未設定"}</span>
-      </div>
-    </button>
+    </article>
   `;
 }
 
@@ -440,16 +447,23 @@ function renderStudentListItem(student) {
     .filter((item) => item.status !== "inactive")
     .reduce((sum, item) => sum + Number(item.lessonsPerWeek || 0), 0);
   const hasMissing = !String(student.name || "").trim();
+  const availabilitySummary = studentDateAvailabilitySummary(student.id);
   return `
-    <button class="entity-item ${student.id === ui.selectedStudentId ? "active" : ""}" type="button" data-select-student="${student.id}">
-      <div class="entity-title-row">
-        <h4>${escapeHtml(student.name)}</h4>
-        ${hasMissing ? `<span class="tag subtle-danger">未入力あり</span>` : ""}
+    <article class="entity-item ${student.id === ui.selectedStudentId ? "active" : ""}">
+      <button class="entity-item-main" type="button" data-select-student="${student.id}">
+        <div class="entity-title-row">
+          <h4>${escapeHtml(student.name)}</h4>
+          ${hasMissing ? `<span class="tag subtle-danger">未入力あり</span>` : ""}
+        </div>
+        <div class="entity-meta">
+          <span class="tag">授業希望 ${totalLessons}回</span>
+        </div>
+      </button>
+      <div class="entity-actions">
+        <span class="tag">${escapeHtml(availabilitySummary)}</span>
+        <button class="ghost-btn" type="button" data-action="open-date-availability" data-entity-type="student" data-owner-id="${student.id}">時間設定</button>
       </div>
-      <div class="entity-meta">
-        <span class="tag">授業希望 ${totalLessons}回</span>
-      </div>
-    </button>
+    </article>
   `;
 }
 
@@ -469,23 +483,6 @@ function renderTeacherForm(teacher) {
       <details class="card details-card">
         <summary>現在担当している生徒</summary>
         ${renderCurrentAssignmentsEditor(current.id)}
-      </details>
-      <div class="card">
-        <div class="calendar-entry">
-          <div>
-            <h4 class="card-title">授業できる時間</h4>
-            <p class="section-copy">日付ごとの授業可能時間はカレンダーで登録できます。曜日ごとの時間は詳細設定に残しています。</p>
-            <div class="pill-row">
-              <span class="tag">${teacherDateAvailabilitySummary(current.id)}</span>
-            </div>
-          </div>
-          <button class="secondary-btn" type="button" data-action="open-date-availability" data-entity-type="teacher" data-owner-id="${current.id}">授業できる時間を設定</button>
-        </div>
-      </div>
-      <details class="card details-card">
-        <summary>現在の自動作成で使う曜日ごとの時間</summary>
-        <p class="section-copy">日付ベースの作成は次のフェーズで対応予定です。今の自動作成では、こちらの曜日ごとの時間を使います。</p>
-        ${renderAvailabilityEditor("teacher", current.id)}
       </details>
       <div class="card">
         <h4 class="card-title">メモ</h4>
@@ -539,23 +536,6 @@ function renderStudentForm(student) {
           </div>
           <small class="helper-text">1: 避けたい / 2: やや避けたい / 3: 普通 / 4: 合う / 5: とても合う</small>
         </div>
-      </details>
-      <div class="card">
-        <div class="calendar-entry">
-          <div>
-            <h4 class="card-title">授業できる時間</h4>
-            <p class="section-copy">通える日付と時間帯はカレンダーで登録できます。曜日ごとの時間は詳細設定に残しています。</p>
-            <div class="pill-row">
-              <span class="tag">${studentDateAvailabilitySummary(current.id)}</span>
-            </div>
-          </div>
-          <button class="secondary-btn" type="button" data-action="open-date-availability" data-entity-type="student" data-owner-id="${current.id}">授業できる時間を設定</button>
-        </div>
-      </div>
-      <details class="card details-card">
-        <summary>現在の自動作成で使う曜日ごとの時間</summary>
-        <p class="section-copy">今の自動作成では、こちらの曜日ごとの時間を使います。</p>
-        ${renderAvailabilityEditor("student", current.id)}
       </details>
       <div class="card">
         <h4 class="card-title">メモ</h4>
@@ -699,7 +679,7 @@ function renderCurrentAssignmentsEditor(teacherId) {
           ${rows.length ? rows.map((item) => `
             <tr>
               <td>${escapeHtml(studentName(item.studentId))}</td>
-              <td>${escapeHtml(slotLabel(item.timeSlotId))}</td>
+              <td>${escapeHtml(currentAssignmentTimeLabel(item))}</td>
               <td>${escapeHtml(subjectName(item.subjectId))}</td>
               <td><button class="ghost-btn" type="button" data-action="delete-current-assignment" data-id="${item.id}">削除</button></td>
             </tr>
@@ -708,6 +688,7 @@ function renderCurrentAssignmentsEditor(teacherId) {
       </table>
       <div class="form-grid two">
         <label class="field"><span>生徒</span><select id="currentAssignmentStudent"><option value="">選択してください</option>${db.students.map((student) => `<option value="${student.id}">${escapeHtml(student.name)}</option>`).join("")}</select></label>
+        <label class="field"><span>曜日</span><select id="currentAssignmentDay"><option value="">選択してください</option>${weekdays.map((day, index) => `<option value="${index + 1}">${day}</option>`).join("")}</select></label>
         <label class="field"><span>時間帯</span><select id="currentAssignmentSlot"><option value="">選択してください</option>${activeSlots().map((slot) => `<option value="${slot.id}">${escapeHtml(slot.label)}</option>`).join("")}</select></label>
         <label class="field"><span>教科</span><select id="currentAssignmentSubject"><option value="">選択してください</option>${subjectSelectOptions("")}</select></label>
         <div class="field"><span>&nbsp;</span><button class="secondary-btn" type="button" data-action="add-current-assignment" data-teacher-id="${teacherId}">担当追加</button></div>
@@ -719,13 +700,7 @@ function renderCurrentAssignmentsEditor(teacherId) {
 function renderSlotRow(slot) {
   return `
     <tr>
-      <td>${weekdays[slot.dayOfWeek - 1]}</td><td>${escapeHtml(slot.startTime)}</td><td>${escapeHtml(slot.endTime)}</td><td>${escapeHtml(slot.label)}</td><td>${slot.sortOrder}</td><td>${slot.isActive ? "使用中" : "停止中"}</td>
-      <td><button class="ghost-btn" type="button" data-action="edit-slot" data-id="${slot.id}">編集</button> <button class="danger-btn" type="button" data-action="delete-slot" data-id="${slot.id}">削除</button></td>
-    </tr>
-  `;
-  return `
-    <tr>
-      <td>${weekdays[slot.dayOfWeek - 1]}</td><td>${escapeHtml(slot.startTime)}</td><td>${escapeHtml(slot.endTime)}</td><td>${escapeHtml(slot.label)}</td><td>${slot.sortOrder}</td><td>${slot.isActive ? "有効" : "無効"}</td>
+      <td>${escapeHtml(slot.startTime)}</td><td>${escapeHtml(slot.endTime)}</td><td>${escapeHtml(slot.label)}</td><td>${slot.sortOrder}</td><td>${slot.isActive ? "有効" : "無効"}</td>
       <td><button class="ghost-btn" type="button" data-action="edit-slot" data-id="${slot.id}">編集</button> <button class="danger-btn" type="button" data-action="delete-slot" data-id="${slot.id}">削除</button></td>
     </tr>
   `;
@@ -748,7 +723,7 @@ function renderTimeBandRow(band) {
       <td>${escapeHtml(band.label)}</td>
       <td>${band.sortOrder}</td>
       <td>${band.isActive ? "有効" : "無効"}</td>
-      <td><button class="ghost-btn" type="button" data-action="edit-slot" data-id="${escapeAttr(band.key)}">編集</button> <button class="danger-btn" type="button" data-action="delete-slot" data-id="${escapeAttr(band.key)}">削除</button></td>
+      <td><button class="ghost-btn" type="button" data-action="edit-slot" data-id="${escapeAttr(band.id)}">編集</button> <button class="danger-btn" type="button" data-action="delete-slot" data-id="${escapeAttr(band.id)}">削除</button></td>
     </tr>
   `;
 }
@@ -864,42 +839,19 @@ function renderSolutionDetail(solution) {
 }
 
 function renderAssignmentMatrix(assignments) {
-  if (assignments.some((item) => item.date)) {
-    const grouped = [...assignments].sort((a, b) =>
-      String(a.date || "").localeCompare(String(b.date || "")) ||
-      slotTimeLabel(a.lessonTimeSlotId || a.timeSlotId).localeCompare(slotTimeLabel(b.lessonTimeSlotId || b.timeSlotId)) ||
-      teacherName(a.teacherId).localeCompare(teacherName(b.teacherId))
-    );
-    return `
-      <table class="matrix-table">
-        <thead><tr><th>日付</th><th>時間帯</th><th>割当</th></tr></thead>
-        <tbody>${grouped.map((item) => `
-          <tr>
-            <td>${escapeHtml(formatDateDisplay(item.date))}</td>
-            <td>${escapeHtml(slotTimeLabel(item.lessonTimeSlotId || item.timeSlotId))}</td>
-            <td>${escapeHtml(teacherName(item.teacherId))}: ${escapeHtml(studentName(item.studentId))}</td>
-          </tr>
-        `).join("")}</tbody>
-      </table>
-    `;
-  }
-  const grouped = {};
-  assignments.forEach((item) => {
-    grouped[item.timeSlotId] = grouped[item.timeSlotId] || [];
-    grouped[item.timeSlotId].push(item);
-  });
+  const grouped = [...assignments].sort((a, b) =>
+    String(a.date || "").localeCompare(String(b.date || "")) ||
+    slotTimeLabel(a.lessonTimeSlotId || a.timeSlotId).localeCompare(slotTimeLabel(b.lessonTimeSlotId || b.timeSlotId)) ||
+    teacherName(a.teacherId).localeCompare(teacherName(b.teacherId))
+  );
   return `
     <table class="matrix-table">
-      <thead><tr><th>時間帯</th>${weekdays.map((day) => `<th>${day}</th>`).join("")}</tr></thead>
-      <tbody>${timeRows().map((row) => `
+      <thead><tr><th>日付</th><th>時間帯</th><th>割当</th></tr></thead>
+      <tbody>${grouped.map((item) => `
         <tr>
-          <td>${escapeHtml(row.label)}</td>
-          ${weekdays.map((day, index) => {
-            const slot = activeSlots().find((item) => item.dayOfWeek === index + 1 && slotKey(item) === row.key);
-            if (!slot) return "<td></td>";
-            const items = grouped[slot.id] || [];
-            return `<td>${items.map((item) => `${escapeHtml(teacherName(item.teacherId))}: ${escapeHtml(studentName(item.studentId))}`).join("<br>")}</td>`;
-          }).join("")}
+          <td>${escapeHtml(formatDateDisplay(item.date))}</td>
+          <td>${escapeHtml(slotTimeLabel(item.lessonTimeSlotId || item.timeSlotId))}</td>
+          <td>${escapeHtml(teacherName(item.teacherId))}: ${escapeHtml(studentName(item.studentId))}</td>
         </tr>
       `).join("")}</tbody>
     </table>
@@ -924,20 +876,6 @@ function bindPageEvents() {
     const eventName = control.type === "text" || control.tagName === "INPUT" && control.type !== "checkbox" ? "input" : "change";
     control.addEventListener(eventName, () => updateFilter(control));
   });
-  document.querySelectorAll("[data-slot-toggle]").forEach((cell) => {
-    cell.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      ui.dragValue = !cell.classList.contains("on");
-      ui.dragActive = true;
-      setAvailability(cell.dataset.entityType, cell.dataset.ownerId, cell.dataset.slotToggle, ui.dragValue);
-      render();
-    });
-    cell.addEventListener("mouseenter", () => {
-      if (!ui.dragActive || (window.event && window.event.buttons !== 1)) return;
-      setAvailability(cell.dataset.entityType, cell.dataset.ownerId, cell.dataset.slotToggle, ui.dragValue);
-      render();
-    });
-  });
   document.onmouseup = () => {
     ui.dragActive = false;
     ui.dragValue = null;
@@ -952,12 +890,6 @@ function bindPageEvents() {
     ui.selectedSolutionId = db.scheduleSolutions.find((item) => item.scheduleRunId === ui.selectedRunId)?.id || null;
     render();
   });
-  document.querySelectorAll("[data-copy-source]").forEach((select) => select.addEventListener("change", () => {
-    if (!select.value) return;
-    copyAvailabilityFromPeer(select.dataset.copySource, select.dataset.ownerId, select.value);
-    select.value = "";
-    render();
-  }));
   document.querySelectorAll("[data-drawer-close]").forEach((node) => node.addEventListener("click", (event) => {
     if (event.target !== node) return;
     requestCloseDrawer();
@@ -1129,7 +1061,6 @@ function removeTeacher(id) {
   if (!window.confirm("この講師を削除します。")) return;
   db.teachers = db.teachers.filter((item) => item.id !== id);
   db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== id);
-  db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => item.teacherId !== id);
   db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => item.teacherId !== id);
   db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.teacherId !== id);
   db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.teacherId !== id);
@@ -1141,7 +1072,6 @@ function removeTeacher(id) {
 function removeStudent(id) {
   if (!window.confirm("この生徒を削除します。")) return;
   db.students = db.students.filter((item) => item.id !== id);
-  db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== id);
   db.studentDateAvailability = db.studentDateAvailability.filter((item) => item.studentId !== id);
   db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== id);
   db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== id);
@@ -1250,17 +1180,18 @@ function hasDateBasedAvailability() {
 }
 
 function dateSchedulingModeLabel() {
-  if (hasDateBasedAvailability()) return "カレンダーで設定した授業できる時間を使って日程案を作成します。";
-  if ((db.teacherDateAvailability?.length || 0) > 0 || (db.studentDateAvailability?.length || 0) > 0) return "授業できる日付がまだ片側だけです。そろうとカレンダー入力を使って作成できます。";
-  return "授業できる日付が未設定のときは、現在の曜日ごとの時間を使って作成します。";
+  if (hasDateBasedAvailability()) return "カレンダーで設定した授業可能日を使って日程案を作成します。";
+  if ((db.teacherDateAvailability?.length || 0) > 0 || (db.studentDateAvailability?.length || 0) > 0) return "授業できる日付がまだ片側だけです。講師と生徒の両方で入力してください。";
+  return "講師と生徒のカードから、授業できる日付を登録してから作成します。";
 }
 
 function addCurrentAssignment(teacherId) {
   const studentId = document.getElementById("currentAssignmentStudent").value;
+  const dayOfWeek = Number(document.getElementById("currentAssignmentDay").value || 0);
   const timeSlotId = document.getElementById("currentAssignmentSlot").value;
   const subjectId = document.getElementById("currentAssignmentSubject").value;
-  if (!studentId || !timeSlotId || !subjectId) return;
-  db.currentLessonAssignments.push({ id: uid("current"), teacherId, studentId, subjectId, timeSlotId, status: "active", effectiveFrom: now(), effectiveTo: null });
+  if (!studentId || !dayOfWeek || !timeSlotId || !subjectId) return;
+  db.currentLessonAssignments.push({ id: uid("current"), teacherId, studentId, subjectId, dayOfWeek, timeSlotId, status: "active", effectiveFrom: now(), effectiveTo: null });
   persist();
   render();
 }
@@ -1294,10 +1225,10 @@ function renameTemplate(id) {
 
 function openSlotModal(id) {
   const band = id ? timeBandByKey(id) : null;
-  const draft = band || { key: "", startTime: "17:00", endTime: "18:30", label: "", sortOrder: timeBands().length + 1, isActive: true };
+  const draft = band || { id: "", startTime: "17:00", endTime: "18:30", label: "", sortOrder: timeBands().length + 1, isActive: true };
   openModal(id ? "時間帯を編集" : "時間帯を追加", `
     <form id="slotForm" class="stack">
-      <input type="hidden" name="id" value="${escapeAttr(draft.key)}" />
+      <input type="hidden" name="id" value="${escapeAttr(draft.id || "")}" />
       <div class="form-grid two">
         <label class="field"><span>開始時刻</span><input type="time" name="startTime" value="${draft.startTime}" /></label>
         <label class="field"><span>終了時刻</span><input type="time" name="endTime" value="${draft.endTime}" /></label>
@@ -1316,9 +1247,9 @@ function openSlotModal(id) {
       const label = String(form.get("label") || "").trim() || `${startTime}-${endTime}`;
       const sortOrder = Number(form.get("sortOrder") || 1);
       const isActive = form.get("isActive") === "on";
-      const existingKey = String(form.get("id") || "");
-      if (existingKey) {
-        db.timeSlots = db.timeSlots.map((item) => bandKey(item) === existingKey ? {
+      const existingId = String(form.get("id") || "");
+      if (existingId) {
+        db.timeSlots = db.timeSlots.map((item) => item.id === existingId ? {
           ...item,
           startTime,
           endTime,
@@ -1327,17 +1258,14 @@ function openSlotModal(id) {
           isActive
         } : item);
       } else {
-        weekdays.forEach((_, index) => {
-          db.timeSlots.push({
-            id: uid("slot"),
-            timetableTemplateId: ui.selectedTemplateId,
-            dayOfWeek: index + 1,
-            startTime,
-            endTime,
-            label,
-            sortOrder,
-            isActive
-          });
+        db.timeSlots.push({
+          id: uid("slot"),
+          timetableTemplateId: ui.selectedTemplateId,
+          startTime,
+          endTime,
+          label,
+          sortOrder,
+          isActive
         });
       }
       closeModal();
@@ -1349,10 +1277,8 @@ function openSlotModal(id) {
 
 function deleteSlot(id) {
   if (!window.confirm("この時間帯を削除します。")) return;
-  const deletedSlotIds = new Set(db.timeSlots.filter((item) => bandKey(item) === id).map((item) => item.id));
+  const deletedSlotIds = new Set(db.timeSlots.filter((item) => item.id === id).map((item) => item.id));
   db.timeSlots = db.timeSlots.filter((item) => !deletedSlotIds.has(item.id));
-  db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => !deletedSlotIds.has(item.timeSlotId));
-  db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => !deletedSlotIds.has(item.timeSlotId));
   db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => !deletedSlotIds.has(item.lessonTimeSlotId));
   db.studentDateAvailability = db.studentDateAvailability.filter((item) => !deletedSlotIds.has(item.lessonTimeSlotId));
   db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => !deletedSlotIds.has(item.timeSlotId));
@@ -1957,7 +1883,6 @@ function discardUnsavedNewDrawerRecord() {
     const teacherId = ui.activeDrawerEntityId;
     db.teachers = db.teachers.filter((item) => item.id !== teacherId);
     db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== teacherId);
-    db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => item.teacherId !== teacherId);
     db.teacherDateAvailability = db.teacherDateAvailability.filter((item) => item.teacherId !== teacherId);
     db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.teacherId !== teacherId);
     db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.teacherId !== teacherId);
@@ -1967,7 +1892,6 @@ function discardUnsavedNewDrawerRecord() {
   if (ui.activeDrawerType === "student") {
     const studentId = ui.activeDrawerEntityId;
     db.students = db.students.filter((item) => item.id !== studentId);
-    db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== studentId);
     db.studentDateAvailability = db.studentDateAvailability.filter((item) => item.studentId !== studentId);
     db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== studentId);
     db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== studentId);
@@ -2077,17 +2001,13 @@ function buildStepStatuses() {
   const teacherReady = db.teachers.length > 0 && db.teachers.every((teacher) =>
     String(teacher.name || "").trim() &&
     teacherSubjectIds(teacher.id).length &&
-    (hasDateBasedAvailability()
-      ? getDateAvailability("teacher", teacher.id).length
-      : getAvailability("teacher", teacher.id).length)
+    getDateAvailability("teacher", teacher.id).length
   );
   const studentReady = db.students.length > 0 && db.students.every((student) => {
     if (!String(student.name || "").trim()) return false;
     const hasActiveRequests = lessonRequestsForStudent(student.id).some((item) => item.status !== "inactive");
     if (!hasActiveRequests) return true;
-    return hasDateBasedAvailability()
-      ? getDateAvailability("student", student.id).length > 0
-      : getAvailability("student", student.id).length > 0;
+    return getDateAvailability("student", student.id).length > 0;
   });
   const slotReady = activeSlots().length > 0;
   const generatorIssues = generatorChecklist().filter((item) => !item.done).length;
@@ -2107,14 +2027,10 @@ function generatorChecklist() {
     { label: "授業希望が登録されている", done: db.lessonRequests.some((item) => item.status !== "inactive"), success: "有効な授業希望があります。", hint: "生徒ごとに教科と回数を追加してください。" },
     { label: "授業時間が設定されている", done: activeSlots().length > 0, success: `${activeSlots().length}枠あります。`, hint: "授業時間画面で時間帯を追加してください。" },
     {
-      label: hasDateBasedAvailability() ? "授業できる日付が入力されている" : "可能時間が入力されている",
-      done: hasDateBasedAvailability()
-        ? db.teacherDateAvailability.length > 0 && db.studentDateAvailability.length > 0
-        : db.teacherAvailabilitySlots.length > 0 && db.studentAvailabilitySlots.length > 0,
-      success: hasDateBasedAvailability() ? "講師・生徒ともに授業可能日が入力されています。" : "講師・生徒ともに時間が入力されています。",
-      hint: hasDateBasedAvailability()
-        ? "講師と生徒の両方で、カレンダーに授業できる日付を追加してください。"
-        : "講師と生徒の両方で、授業できる時間を選んでください。"
+      label: "授業できる日付が入力されている",
+      done: db.teacherDateAvailability.length > 0 && db.studentDateAvailability.length > 0,
+      success: "講師・生徒ともに授業可能日が入力されています。",
+      hint: "講師と生徒の両方で、カレンダーに授業できる日付を追加してください。"
     }
   ];
 }
@@ -2156,8 +2072,8 @@ function renderDrawer(kind, title, content, id) {
   const action = kind === "teacher" ? "close-teacher-drawer" : "close-student-drawer";
   const deleteAction = kind === "teacher" ? "delete-teacher" : "delete-student";
   const lead = kind === "teacher"
-    ? "基本情報から授業できる時間まで、右側でまとめて編集できます。"
-    : "授業希望と授業できる時間を、右側でまとめて編集できます。";
+    ? "基本情報と担当条件を、右側でまとめて編集できます。"
+    : "授業希望と講師希望を、右側でまとめて編集できます。";
   return `
     <div class="drawer-backdrop" data-drawer-close="${action}">
       <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="${escapeAttr(title)}" data-drawer-panel="true">
@@ -2267,12 +2183,12 @@ function updateFilter(control) {
 }
 
 function clearTeacherFilters() {
-  ui.teacherFilters = { search: "", subjectId: "", gender: "", dayOfWeek: "", missingOnly: false };
+  ui.teacherFilters = { search: "" };
   render();
 }
 
 function clearStudentFilters() {
-  ui.studentFilters = { search: "", subjectId: "", supportLevel: "", requestState: "", missingAvailabilityOnly: false, noActiveRequestsOnly: false };
+  ui.studentFilters = { search: "" };
   render();
 }
 
@@ -2339,7 +2255,9 @@ function studentPrefersGender(studentId, gender) {
 }
 
 function timeSlotsForTemplate(templateId) {
-  return db.timeSlots.filter((slot) => slot.timetableTemplateId === templateId).sort((a, b) => a.sortOrder - b.sortOrder || a.dayOfWeek - b.dayOfWeek);
+  return db.timeSlots
+    .filter((slot) => slot.timetableTemplateId === templateId)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.startTime.localeCompare(b.startTime) || a.endTime.localeCompare(b.endTime));
 }
 
 function activeSlots() {
@@ -2363,20 +2281,19 @@ function activeSubjectGroups() {
 }
 
 function timeRows() {
-  const rowMap = {};
-  activeSlots().forEach((slot) => {
-    const key = slotKey(slot);
-    rowMap[key] = rowMap[key] || { key, label: `${slot.startTime}-${slot.endTime}`, sortOrder: slot.sortOrder };
-  });
-  return Object.values(rowMap).sort((a, b) => a.sortOrder - b.sortOrder);
+  return activeSlots().map((slot) => ({
+    key: slot.id,
+    label: `${slot.startTime}-${slot.endTime}`,
+    sortOrder: slot.sortOrder
+  }));
 }
 
 function slotKey(slot) {
-  return `${slot.startTime}-${slot.endTime}`;
+  return slot.id;
 }
 
 function bandKey(slot) {
-  return `${slot.startTime}|${slot.endTime}`;
+  return slot.id;
 }
 
 function subjectName(id) {
@@ -2400,12 +2317,18 @@ function studentName(id) {
 function slotLabel(id) {
   const slot = db.timeSlots.find((item) => item.id === id);
   if (!slot) return "未設定";
-  return `${weekdays[(slot.dayOfWeek || 1) - 1]} ${slot.startTime}-${slot.endTime}`;
+  return `${slot.startTime}-${slot.endTime}`;
 }
 
 function assignmentTimeLabel(assignment) {
   if (assignment?.date) return `${formatDateDisplay(assignment.date)} ${slotTimeLabel(assignment.lessonTimeSlotId || assignment.timeSlotId)}`;
   return slotLabel(assignment?.timeSlotId);
+}
+
+function currentAssignmentTimeLabel(assignment) {
+  const dayLabel = weekdays[(Number(assignment?.dayOfWeek || 1) - 1)] || "";
+  const timeLabel = slotTimeLabel(assignment?.timeSlotId);
+  return `${dayLabel} ${timeLabel}`.trim();
 }
 
 function formatDateDisplay(dateKey) {
@@ -2462,6 +2385,7 @@ function openDateAvailabilityModal(entityType, ownerId) {
     ownerId,
     month: startOfMonth(new Date()),
     selectedDates: [],
+    selectedSlotIds: [],
     draftRows: getDateAvailability(entityType, ownerId).map((item) => ({ ...item }))
   };
   renderDateAvailabilityModal();
@@ -2536,8 +2460,8 @@ function buildDateAvailabilityModalContent(entity) {
             <h4 class="card-title">時間帯を選ぶ</h4>
             <div class="checkbox-grid stacked-chip-grid">
               ${lessonTimeSlotOptions().map((slot) => `
-                <label class="chip slot-choice">
-                  <input type="checkbox" name="calendar-slot" value="${slot.id}" />
+                <label class="chip slot-choice ${(modalState.selectedSlotIds || []).includes(slot.id) ? "active" : ""}">
+                  <input type="checkbox" name="calendar-slot" value="${slot.id}" ${(modalState.selectedSlotIds || []).includes(slot.id) ? "checked" : ""} />
                   <span>${escapeHtml(slot.label)}</span>
                 </label>
               `).join("") || `<div class="muted">時間帯を先に登録してください。</div>`}
@@ -2572,6 +2496,10 @@ function bindDateAvailabilityModalEvents() {
     toggleCalendarDate(button.dataset.calendarDate);
     renderDateAvailabilityModal();
   }));
+  document.querySelectorAll('input[name="calendar-slot"]').forEach((input) => input.addEventListener("change", () => {
+    modalState.selectedSlotIds = Array.from(document.querySelectorAll('input[name="calendar-slot"]:checked')).map((item) => item.value);
+    renderDateAvailabilityModal();
+  }));
   document.querySelector("[data-calendar-bulk-add='true']")?.addEventListener("click", addCalendarSlotsToSelectedDates);
   document.querySelector("[data-calendar-clear-days='true']")?.addEventListener("click", clearCalendarSelectedDates);
   document.querySelector("[data-calendar-clear-selection='true']")?.addEventListener("click", () => {
@@ -2591,7 +2519,7 @@ function toggleCalendarDate(date) {
 
 function addCalendarSlotsToSelectedDates() {
   const selectedDates = modalState.selectedDates || [];
-  const slotIds = Array.from(document.querySelectorAll('input[name="calendar-slot"]:checked')).map((input) => input.value);
+  const slotIds = modalState.selectedSlotIds || [];
   if (!selectedDates.length || !slotIds.length) return;
   const ownerKey = modalState.entityType === "teacher" ? "teacherId" : "studentId";
   const additions = [];
@@ -2625,43 +2553,21 @@ function saveDateAvailabilityModal() {
 
 function closeDateAvailabilityModal() {
   modalState = null;
-  closeModal();
+  removeModal();
 }
 
 function timeBands() {
-  const rows = new Map();
-  timeSlotsForTemplate(ui.selectedTemplateId).forEach((slot) => {
-    const key = bandKey(slot);
-    if (!rows.has(key)) {
-      rows.set(key, {
-        key,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        label: slot.label || `${slot.startTime}-${slot.endTime}`,
-        sortOrder: slot.sortOrder,
-        isActive: slot.isActive
-      });
-    } else {
-      const row = rows.get(key);
-      row.isActive = row.isActive || slot.isActive;
-      row.sortOrder = Math.min(row.sortOrder, slot.sortOrder);
-      if (!row.label || row.label.includes("月 ") || row.label.includes("火 ") || row.label.includes("水 ") || row.label.includes("木 ") || row.label.includes("金 ") || row.label.includes("土 ") || row.label.includes("日 ")) {
-        row.label = `${slot.startTime}-${slot.endTime}`;
-      }
-    }
-  });
-  return [...rows.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.startTime.localeCompare(b.startTime) || a.endTime.localeCompare(b.endTime));
+  return timeSlotsForTemplate(ui.selectedTemplateId);
 }
 
 function timeBandByKey(key) {
-  return timeBands().find((item) => item.key === key) || null;
+  return timeBands().find((item) => item.id === key) || null;
 }
 
 function lessonTimeSlotOptions() {
-  return timeBands().filter((band) => band.isActive).map((band) => {
-    const slot = timeSlotsForTemplate(ui.selectedTemplateId).find((item) => bandKey(item) === band.key);
-    return { id: slot?.id || "", label: `${band.startTime}-${band.endTime}` };
-  }).filter((item) => item.id);
+  return timeBands()
+    .filter((band) => band.isActive)
+    .map((band) => ({ id: band.id, label: `${band.startTime}-${band.endTime}` }));
 }
 
 function teacherTags(ids = [], emptyLabel = "なし") {
@@ -2761,27 +2667,39 @@ function safeJson(text) {
 }
 
 function openModal(title, content, onReady) {
-  closeModal();
+  removeModal();
   const fragment = document.getElementById("modalTemplate").content.cloneNode(true);
   fragment.querySelector(".modal-title").textContent = title;
   fragment.querySelector(".modal-content").innerHTML = content;
   const node = fragment.querySelector(".modal-backdrop");
   document.body.appendChild(node);
-  node.querySelector(".modal-close").addEventListener("click", closeModal);
+  node.querySelector(".modal-close").addEventListener("click", requestCloseModal);
   node.addEventListener("click", (event) => {
-    if (event.target === node) closeModal();
+    if (event.target === node) requestCloseModal();
   });
   if (onReady) onReady();
 }
 
 function openNoticeModal(title, message) {
   openModal(title, `<div class="stack"><div class="callout">${escapeHtml(message)}</div><div class="action-row"><button class="ghost-btn" type="button" data-close-modal="true">閉じる</button></div></div>`, () => {
-    document.querySelector("[data-close-modal='true']")?.addEventListener("click", closeModal);
+    document.querySelector("[data-close-modal='true']")?.addEventListener("click", requestCloseModal);
   });
 }
 
 function closeModal() {
   modalState = null;
+  removeModal();
+}
+
+function requestCloseModal() {
+  if (modalState?.type === "date-availability") {
+    closeDateAvailabilityModal();
+    return;
+  }
+  closeModal();
+}
+
+function removeModal() {
   document.querySelector(".modal-backdrop")?.remove();
 }
 

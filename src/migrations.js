@@ -3,7 +3,6 @@ import {
   SCHEMA_VERSION,
   confirmedAssignmentStatus,
   lessonRequestStatus,
-  weekdays,
   now,
   uid
 } from "./constants.js";
@@ -78,18 +77,15 @@ export function defaultTimeSlots(templateId) {
     ["19:00", "20:20"],
     ["19:00", "19:50"]
   ];
-  return weekdays.flatMap((day, dayIndex) =>
-    windows.map((window, index) => ({
-      id: uid("slot"),
-      timetableTemplateId: templateId,
-      dayOfWeek: dayIndex + 1,
-      startTime: window[0],
-      endTime: window[1],
-      label: `${window[0]}-${window[1]}`,
-      sortOrder: dayIndex * windows.length + index + 1,
-      isActive: true
-    }))
-  );
+  return windows.map((window, index) => ({
+    id: uid("slot"),
+    timetableTemplateId: templateId,
+    startTime: window[0],
+    endTime: window[1],
+    label: `${window[0]}-${window[1]}`,
+    sortOrder: index + 1,
+    isActive: true
+  }));
 }
 
 export function createLessonRequestsFromStudentSubjectRequests(db) {
@@ -138,7 +134,14 @@ function normalizeTemplates(templates, templateId) {
 
 function normalizeTimeSlots(timeSlots, templateId) {
   const items = arrayOrEmpty(timeSlots);
-  return items.length ? items : defaultTimeSlots(templateId);
+  if (!items.length) return defaultTimeSlots(templateId);
+  return items.map((slot, index) => ({
+    ...slot,
+    timetableTemplateId: slot.timetableTemplateId || templateId,
+    label: String(slot.label || `${slot.startTime}-${slot.endTime}`),
+    sortOrder: Number.isFinite(Number(slot.sortOrder)) ? Number(slot.sortOrder) : index + 1,
+    isActive: slot.isActive !== false
+  }));
 }
 
 function normalizeRuns(runs) {

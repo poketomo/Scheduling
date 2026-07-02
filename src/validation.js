@@ -1,7 +1,7 @@
 import { confirmedAssignmentStatus } from "./constants.js";
 import {
   applyLockedAssignments,
-  buildCandidateAssignments,
+  buildDateBasedCandidateAssignments,
   filterInvalidCandidates
 } from "./scheduler.js";
 
@@ -22,19 +22,14 @@ export function validateDb(db) {
 export function generatorReadiness(db) {
   const issues = [];
   const activeRequestStudentIds = new Set(db.lessonRequests.filter((request) => request.status === "active").map((request) => request.studentId));
-  const hasDateAvailability = (db.teacherDateAvailability?.length || 0) > 0 && (db.studentDateAvailability?.length || 0) > 0;
   if (!db.timeSlots.some((slot) => slot.isActive)) issues.push("有効な時間割スロットがありません。");
   if (!db.teachers.length) issues.push("講師が未登録です。");
   if (!db.students.length) issues.push("生徒が未登録です。");
   if (db.teachers.some((teacher) => !String(teacher.name || "").trim())) issues.push("名前未入力の講師がいます。");
   if (db.students.some((student) => !String(student.name || "").trim())) issues.push("名前未入力の生徒がいます。");
   if (db.teachers.some((teacher) => !db.teacherSubjects.some((item) => item.teacherId === teacher.id))) issues.push("対応教科未設定の講師がいます。");
-  if (hasDateAvailability) {
-    if ([...activeRequestStudentIds].some((studentId) => !db.studentDateAvailability.some((item) => item.studentId === studentId))) issues.push("授業可能日未設定の生徒がいます。");
-    if (!db.teacherDateAvailability.some((item) => item.teacherId)) issues.push("授業可能日未設定の講師がいます。");
-  } else if ([...activeRequestStudentIds].some((studentId) => !db.studentAvailabilitySlots.some((item) => item.studentId === studentId))) {
-    issues.push("可能時間未設定の生徒がいます。");
-  }
+  if ([...activeRequestStudentIds].some((studentId) => !db.studentDateAvailability.some((item) => item.studentId === studentId))) issues.push("授業可能日未設定の生徒がいます。");
+  if (!db.teacherDateAvailability.some((item) => item.teacherId)) issues.push("授業可能日未設定の講師がいます。");
   if (db.lessonRequests.filter((request) => request.status === "active").length === 0) issues.push("有効な受講希望がありません。");
   issues.push(...validateDb(db));
   return [...new Set(issues)];
@@ -73,8 +68,6 @@ function validateReferences(db, issues) {
     lessonRequestId: new Set(db.lessonRequests.map((item) => item.id))
   };
   validateRefTable(db.teacherSubjects, ["teacherId", "subjectId"], sets, issues, "teacherSubjects");
-  validateRefTable(db.teacherAvailabilitySlots, ["teacherId", "timeSlotId"], sets, issues, "teacherAvailabilitySlots");
-  validateRefTable(db.studentAvailabilitySlots, ["studentId", "timeSlotId"], sets, issues, "studentAvailabilitySlots");
   validateRefTable(db.studentSubjectRequests, ["studentId", "subjectId"], sets, issues, "studentSubjectRequests");
   validateRefTable(db.studentTeacherPreferences, ["studentId", "teacherId"], sets, issues, "studentTeacherPreferences");
   validateRefTable(db.studentTeacherCompatibilities || [], ["studentId", "teacherId"], sets, issues, "studentTeacherCompatibilities");
@@ -145,12 +138,7 @@ function validateConfirmedAssignments(db, issues) {
         issues.push("confirmedAssignments に生徒可能日外の割当があります。");
       }
     } else {
-      if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === assignment.timeSlotId)) {
-        issues.push("confirmedAssignments に講師可能時間外の割当があります。");
-      }
-      if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === assignment.timeSlotId)) {
-        issues.push("confirmedAssignments に生徒可能時間外の割当があります。");
-      }
+      issues.push("confirmedAssignments に日付が入っていない割当があります。");
     }
     const studentConflictKey = `${assignment.studentId}|${assignment.date || ""}|${assignment.lessonTimeSlotId || assignment.timeSlotId}|${assignment.status}`;
     if (assignment.status === confirmedAssignmentStatus.confirmed && seen.has(studentConflictKey)) {
@@ -162,8 +150,6 @@ function validateConfirmedAssignments(db, issues) {
 
 function validateDuplicates(db, issues) {
   assertUnique(db.teacherSubjects, ["teacherId", "subjectId"], issues, "teacherSubjects");
-  assertUnique(db.teacherAvailabilitySlots, ["teacherId", "timeSlotId"], issues, "teacherAvailabilitySlots");
-  assertUnique(db.studentAvailabilitySlots, ["studentId", "timeSlotId"], issues, "studentAvailabilitySlots");
   assertUnique(db.studentSubjectRequests, ["studentId", "subjectId"], issues, "studentSubjectRequests");
   assertUnique(db.studentTeacherPreferences, ["studentId", "teacherId", "preferenceType"], issues, "studentTeacherPreferences");
   assertUnique(db.studentTeacherCompatibilities || [], ["studentId", "teacherId"], issues, "studentTeacherCompatibilities");
@@ -177,14 +163,15 @@ function validateLockedAssignments(db, issues) {
   if (lockedAssignments.length !== valid.length) {
     issues.push("固定済み割当の一部が絶対条件に違反しています。");
   }
-  const candidates = filterInvalidCandidates(db, buildCandidateAssignments(db));
+  const candidates = filterInvalidCandidates(db, buildDateBasedCandidateAssignments(db));
   for (const assignment of lockedAssignments) {
     const match = candidates.some((candidate) =>
       candidate.teacherId === assignment.teacherId &&
       candidate.studentId === assignment.studentId &&
       candidate.lessonRequestId === assignment.lessonRequestId &&
       candidate.subjectId === assignment.subjectId &&
-      candidate.timeSlotId === assignment.timeSlotId
+      candidate.timeSlotId === assignment.timeSlotId &&
+      candidate.date === assignment.date
     );
     if (!match) issues.push("固定済み割当に無効な候補が含まれています。");
   }

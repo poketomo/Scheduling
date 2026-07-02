@@ -2,79 +2,7 @@ import { confirmedAssignmentStatus, lessonRequestStatus, now, reasonLabels, uid 
 import { buildScoreBreakdown, scoreCandidate, supportLoadOfStudent } from "./scoring.js";
 
 export function generateScheduleSolutions(db, options = {}) {
-  if (shouldUseDateBasedGeneration(db, options)) {
-    return generateDateBasedScheduleSolutions(db, options);
-  }
-
-  const candidateCount = Number(options.candidateCount || 5);
-  const preserveLocks = Boolean(options.preserveLocks);
-  const templateId = options.templateId || db.timetableTemplates[0]?.id || null;
-  const runId = uid("run");
-  const run = {
-    id: runId,
-    timetableTemplateId: templateId,
-    status: "completed",
-    createdAt: now(),
-    inputSnapshotJson: buildInputSnapshot(db)
-  };
-
-  const lockedAssignments = preserveLocks ? applyLockedAssignments(db, options.lockedAssignments || getLockedAssignments(db)) : [];
-  const allCandidates = buildCandidateAssignments(db, options);
-  const validCandidates = filterInvalidCandidates(db, allCandidates);
-  const units = buildLessonRequestUnits(db);
-  const orderBase = [...units].sort((a, b) => candidateHardness(validCandidates, b) - candidateHardness(validCandidates, a));
-  const rankedSolutions = [];
-
-  for (let variant = 0; variant < candidateCount; variant += 1) {
-    const order = variant % 2 === 0 ? orderBase : [...orderBase].reverse();
-    const solutionId = uid("solution");
-    const result = assignStudents(db, validCandidates, {
-      order,
-      variantSeed: variant,
-      lockedAssignments,
-      allowSameDayMultipleLessons: options.allowSameDayMultipleLessons ?? true
-    });
-    const assignments = result.assignments.map((assignment) => ({
-      id: uid("schedule-assignment"),
-      scheduleSolutionId: solutionId,
-      teacherId: assignment.teacherId,
-      studentId: assignment.studentId,
-      lessonRequestId: assignment.lessonRequestId,
-      occurrenceIndex: assignment.occurrenceIndex,
-      subjectId: assignment.subjectId,
-      timeSlotId: assignment.timeSlotId,
-      score: assignment.score,
-      scoreBreakdownJson: assignment.scoreBreakdown,
-      isLocked: assignment.isLocked || false
-    }));
-    rankedSolutions.push({
-      solution: {
-        id: solutionId,
-        scheduleRunId: runId,
-        rank: variant + 1,
-        totalScore: assignments.reduce((sum, item) => sum + item.score, 0),
-        assignedCount: assignments.length,
-        unassignedCount: result.unassigned.length,
-        summaryJson: summarizeSolution({ assignments, unassigned: result.unassigned })
-      },
-      assignments
-    });
-  }
-
-  rankedSolutions.sort((a, b) =>
-    b.solution.totalScore - a.solution.totalScore ||
-    b.solution.assignedCount - a.solution.assignedCount ||
-    a.solution.unassignedCount - b.solution.unassignedCount
-  );
-  rankedSolutions.forEach((entry, index) => {
-    entry.solution.rank = index + 1;
-  });
-
-  return {
-    run,
-    solutions: rankedSolutions.map((entry) => entry.solution),
-    assignments: rankedSolutions.flatMap((entry) => entry.assignments)
-  };
+  return generateDateBasedScheduleSolutions(db, options);
 }
 
 export function generateDateBasedScheduleSolutions(db, options = {}) {
@@ -176,41 +104,7 @@ export function buildLessonRequestUnits(db) {
 }
 
 export function buildCandidateAssignments(db, options = {}) {
-  const units = buildLessonRequestUnits(db);
-  const candidates = [];
-  for (const unit of units) {
-    const request = db.lessonRequests.find((item) => item.id === unit.lessonRequestId);
-    if (!request) continue;
-    const studentSlots = new Set(getStudentAvailability(db, unit.studentId));
-    const blockedTeachers = new Set(request.blockedTeacherIds || []);
-    const preferredTeachers = new Set(request.preferredTeacherIds || []);
-    for (const teacher of db.teachers) {
-      if (blockedTeachers.has(teacher.id)) continue;
-      if (!getTeacherSubjectIds(db, teacher.id).includes(unit.subjectId)) continue;
-      const teacherSlots = new Set(getTeacherAvailability(db, teacher.id));
-      for (const timeSlotId of studentSlots) {
-        if (!teacherSlots.has(timeSlotId)) continue;
-        const slot = db.timeSlots.find((item) => item.id === timeSlotId);
-        candidates.push({
-          unitId: unit.unitId,
-          lessonRequestId: unit.lessonRequestId,
-          occurrenceIndex: unit.occurrenceIndex,
-          studentId: unit.studentId,
-          subjectId: unit.subjectId,
-          teacherId: teacher.id,
-          timeSlotId,
-          dayOfWeek: slot?.dayOfWeek || null,
-          preferredTeacherIds: preferredTeachers,
-          blockedTeacherIds: blockedTeachers,
-          preferredGender: request.preferredGender || null,
-          teacherGender: teacher.gender,
-          priority: request.priority || unit.priority,
-          allowSameDayMultipleLessons: options.allowSameDayMultipleLessons ?? true
-        });
-      }
-    }
-  }
-  return candidates;
+  return buildDateBasedCandidateAssignments(db, options);
 }
 
 export function buildDateBasedCandidateAssignments(db, options = {}) {
@@ -298,55 +192,7 @@ export function assignStudents(db, candidates, options = {}) {
 }
 
 export function explainUnassignedStudent(db, unit, candidates = [], occupancyAssignments = []) {
-  const request = db.lessonRequests.find((item) => item.id === unit.lessonRequestId);
-  const reasons = [];
-  const studentSlots = getStudentAvailability(db, unit.studentId);
-  if (!studentSlots.length) reasons.push(reason("NO_STUDENT_AVAILABILITY"));
-  if (!request?.subjectId) reasons.push(reason("NO_SUBJECT_REQUEST"));
-
-  const teacherForSubject = db.teachers.filter((teacher) => getTeacherSubjectIds(db, teacher.id).includes(unit.subjectId));
-  if (!teacherForSubject.length) reasons.push(reason("NO_TEACHER_FOR_SUBJECT"));
-
-  const allForUnit = candidates.filter((candidate) => candidate.unitId === unit.unitId);
-  if (!allForUnit.length && teacherForSubject.length && studentSlots.length) {
-    const blockedAvailable = teacherForSubject.filter((teacher) => (request?.blockedTeacherIds || []).includes(teacher.id));
-    if (blockedAvailable.length === teacherForSubject.length && blockedAvailable.length > 0) {
-      reasons.push(reason("ONLY_BLOCKED_TEACHERS_AVAILABLE"));
-      reasons.push(reason("NO_COMMON_TIME_SLOT"));
-    } else {
-      reasons.push(reason("NO_COMMON_TIME_SLOT"));
-    }
-  }
-
-  if (allForUnit.length) {
-    const capacityBlocked = allForUnit.every((candidate) =>
-      occupancyAssignments.filter((assignment) => assignment.teacherId === candidate.teacherId && assignment.timeSlotId === candidate.timeSlotId).length >= 3
-    );
-    if (capacityBlocked) reasons.push(reason("TEACHER_SLOT_CAPACITY_FULL"));
-
-    const studentConflict = allForUnit.every((candidate) =>
-      occupancyAssignments.some((assignment) => assignment.studentId === candidate.studentId && assignment.timeSlotId === candidate.timeSlotId)
-    );
-    if (studentConflict) reasons.push(reason("STUDENT_TIME_CONFLICT"));
-
-    const lockedConflict = allForUnit.every((candidate) =>
-      occupancyAssignments.some((assignment) =>
-        assignment.timeSlotId === candidate.timeSlotId &&
-        ((assignment.teacherId === candidate.teacherId && assignment.isCommitted) ||
-          (assignment.studentId === candidate.studentId && assignment.isCommitted) ||
-          assignment.isLocked)
-      )
-    );
-    if (lockedConflict) reasons.push(reason("LOCKED_ASSIGNMENT_CONFLICT"));
-  }
-
-  if (!reasons.length) reasons.push(reason("UNKNOWN"));
-  return {
-    lessonRequestId: unit.lessonRequestId,
-    studentId: unit.studentId,
-    reasons,
-    reason: reasons.map((item) => item.label).join(" / ")
-  };
+  return explainDateBasedUnassignedRequest(db, unit, candidates, occupancyAssignments);
 }
 
 export function explainDateBasedUnassignedRequest(db, unit, candidates = [], occupancyAssignments = []) {
@@ -458,16 +304,7 @@ export function buildAssignmentMoveOptions(db, assignments, assignment) {
       }))
       .filter((candidate) => !sameDateSlot(candidate, normalizedAssignment))
       .filter((candidate) => getStudentDateAvailability(db, normalizedAssignment.studentId).some((row) => row.date === candidate.date && row.lessonTimeSlotId === candidate.timeSlotId))
-    : getTeacherAvailability(db, teacher.id)
-      .map((timeSlotId) => ({
-        ...buildCandidateBase(db, request, normalizedAssignment, teacher),
-        timeSlotId,
-        lessonTimeSlotId: timeSlotId,
-        date: null,
-        dayOfWeek: getSlotDayOfWeek(db, timeSlotId)
-      }))
-      .filter((candidate) => candidate.timeSlotId !== normalizedAssignment.timeSlotId)
-      .filter((candidate) => getStudentAvailability(db, normalizedAssignment.studentId).includes(candidate.timeSlotId));
+    : [];
 
   return candidates
     .filter((candidate) => isFeasibleCandidate(occupancyAssignments, candidate, {}))
@@ -489,9 +326,7 @@ export function buildTeacherChangeOptions(db, assignments, assignment) {
     .filter((teacher) => teacher.id !== normalizedAssignment.teacherId)
     .filter((teacher) => !blockedTeachers.has(teacher.id))
     .filter((teacher) => getTeacherSubjectIds(db, teacher.id).includes(normalizedAssignment.subjectId))
-    .filter((teacher) => normalizedAssignment.date
-      ? getTeacherDateAvailability(db, teacher.id).some((row) => row.date === normalizedAssignment.date && row.lessonTimeSlotId === normalizedAssignment.timeSlotId)
-      : getTeacherAvailability(db, teacher.id).includes(normalizedAssignment.timeSlotId))
+    .filter((teacher) => getTeacherDateAvailability(db, teacher.id).some((row) => row.date === normalizedAssignment.date && row.lessonTimeSlotId === normalizedAssignment.timeSlotId))
     .map((teacher) => ({
       ...buildCandidateBase(db, request, normalizedAssignment, teacher),
       timeSlotId: normalizedAssignment.timeSlotId,
@@ -601,8 +436,6 @@ function buildInputSnapshot(db) {
     subjects: db.subjects,
     timeSlots: db.timeSlots,
     teacherSubjects: db.teacherSubjects,
-    teacherAvailabilitySlots: db.teacherAvailabilitySlots,
-    studentAvailabilitySlots: db.studentAvailabilitySlots,
     teacherDateAvailability: db.teacherDateAvailability,
     studentDateAvailability: db.studentDateAvailability,
     studentSubjectRequests: db.studentSubjectRequests,
@@ -640,14 +473,6 @@ function getActiveLessonRequests(db) {
   return db.lessonRequests.filter((item) => item.status !== lessonRequestStatus.inactive);
 }
 
-function getTeacherAvailability(db, teacherId) {
-  return db.teacherAvailabilitySlots.filter((item) => item.teacherId === teacherId).map((item) => item.timeSlotId);
-}
-
-function getStudentAvailability(db, studentId) {
-  return db.studentAvailabilitySlots.filter((item) => item.studentId === studentId).map((item) => item.timeSlotId);
-}
-
 function getTeacherDateAvailability(db, teacherId) {
   return db.teacherDateAvailability.filter((item) => item.teacherId === teacherId);
 }
@@ -683,11 +508,6 @@ export function summarizeTeachers(db, assignments) {
       load: items.reduce((sum, item) => sum + supportLoadOfStudent(db, item.studentId), 0)
     };
   });
-}
-
-function shouldUseDateBasedGeneration(db, options = {}) {
-  if (options.forceLegacyScheduler) return false;
-  return (db.teacherDateAvailability?.length || 0) > 0 && (db.studentDateAvailability?.length || 0) > 0;
 }
 
 function isValidDateString(value) {

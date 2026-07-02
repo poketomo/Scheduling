@@ -1,6 +1,6 @@
 export const STORAGE_KEY = "scheduling-mvp-db-v1";
 export const LEGACY_STORAGE_KEY = "scheduling-mvp-state-v1";
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const tabs = [
   { id: "teachers", label: "講師" },

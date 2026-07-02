@@ -6,12 +6,12 @@ export function buildSampleDb() {
   const math = db.subjects.find((item) => item.name === "数学" && item.stage === "middle")?.id || db.subjects[0]?.id;
   const english = db.subjects.find((item) => item.name === "英語" && item.stage === "middle")?.id || db.subjects[1]?.id;
   const japanese = db.subjects.find((item) => item.name === "国語" && item.stage === "middle")?.id || db.subjects[2]?.id;
-  const slot1 = findSlot(db, 1, "16:00", "17:30");
-  const slot2 = findSlot(db, 1, "17:40", "19:10");
-  const slot3 = findSlot(db, 2, "16:00", "17:30");
-  const slot4 = findSlot(db, 2, "17:40", "19:10");
-  const slot5 = findSlot(db, 3, "16:00", "17:30");
-  const slot6 = findSlot(db, 3, "17:40", "19:10");
+  const slot1 = findSlot(db, "16:00", "17:30");
+  const slot2 = findSlot(db, "17:40", "19:10");
+  const slot3 = findSlot(db, "19:20", "20:50");
+  const slot4 = findSlot(db, "19:00", "20:20");
+  const slot5 = findSlot(db, "19:00", "19:50");
+  const slot6 = findSlot(db, "17:40", "19:10");
 
   const teachers = [
     teacher("佐藤先生", "female"),
@@ -28,9 +28,6 @@ export function buildSampleDb() {
     link("teacher-subject", { teacherId: teachers[2].id, subjectId: english })
   );
 
-  pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[0].id, [slot1, slot2, slot3, slot4]);
-  pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[1].id, [slot2, slot3, slot4, slot5]);
-  pushAvailability(db.teacherAvailabilitySlots, "teacherId", teachers[2].id, [slot1, slot3, slot5, slot6]);
   pushDateAvailability(db.teacherDateAvailability, "teacherId", teachers[0].id, [
     [daysFromToday(1), slot1.id],
     [daysFromToday(1), slot2.id],
@@ -75,20 +72,6 @@ export function buildSampleDb() {
   addStudentSubject(db, students.weeklyTwo.id, english, 1);
   addStudentSubject(db, students.confirmed.id, math, 1);
 
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.hana.id, [slot1, slot2]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.ren.id, [slot2, slot3]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.aoi.id, [slot1, slot3]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.haru.id, [slot3, slot5]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.ao.id, [slot4]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.hikaru.id, [slot2, slot3]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.missing.id, [slot6]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.mathA.id, [slot2]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.mathB.id, [slot2]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.mathC.id, [slot2]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.mathD.id, [slot2]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.multi.id, [slot1, slot2, slot3, slot5]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.weeklyTwo.id, [slot1, slot3, slot5]);
-  pushAvailability(db.studentAvailabilitySlots, "studentId", students.confirmed.id, [slot2, slot4]);
   pushDateAvailability(db.studentDateAvailability, "studentId", students.hana.id, [
     [daysFromToday(1), slot1.id],
     [daysFromToday(5), slot2.id]
@@ -186,17 +169,6 @@ function link(prefix, fields) {
   return { id: uid(prefix), ...fields };
 }
 
-function pushAvailability(collection, ownerKey, ownerId, slots) {
-  for (const slot of slots) {
-    collection.push({
-      id: uid("availability"),
-      [ownerKey]: ownerId,
-      timeSlotId: slot.id,
-      availabilityLevel: "available"
-    });
-  }
-}
-
 function pushDateAvailability(collection, ownerKey, ownerId, entries) {
   for (const [date, lessonTimeSlotId] of entries) {
     collection.push({
@@ -217,8 +189,8 @@ function addStudentSubject(db, studentId, subjectId, priority) {
   });
 }
 
-function findSlot(db, dayOfWeek, startTime, endTime) {
-  return db.timeSlots.find((slot) => slot.dayOfWeek === dayOfWeek && slot.startTime === startTime && slot.endTime === endTime);
+function findSlot(db, startTime, endTime) {
+  return db.timeSlots.find((slot) => slot.startTime === startTime && slot.endTime === endTime);
 }
 
 function daysFromToday(offset) {

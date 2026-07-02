@@ -373,19 +373,27 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-radius: 999px;
+  border-radius: 12px;
   border: 1px solid var(--border);
 }
 
 .checkbox-item,
 .inline-option,
 .chip {
-  padding: 8px 12px;
-  background: var(--surface-alt);
+  min-height: 36px;
+  padding: 7px 12px;
+  background: var(--surface);
 }
 
 .chip {
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .chip.active {
@@ -457,9 +465,26 @@ textarea {
   border-radius: var(--radius-md);
   padding: 14px;
   background: var(--surface);
-  cursor: pointer;
   text-align: left;
   box-shadow: var(--shadow-sm);
+}
+
+.entity-item-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .entity-item:hover {
@@ -482,9 +507,9 @@ textarea {
 
 .empty-state {
   min-height: 220px;
-  border: 1px dashed var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(248, 250, 252, 0.95));
+  background: var(--surface);
   display: grid;
   place-items: center;
   text-align: center;
@@ -1423,6 +1448,7 @@ textarea {
   align-content: start;
   gap: 8px;
   text-align: left;
+  cursor: pointer;
 }
 
 .calendar-day:nth-child(7n) {
