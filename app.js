@@ -9,6 +9,10 @@ let ui = {
   tab: "teachers",
   selectedTeacherId: db.teachers[0]?.id || null,
   selectedStudentId: db.students[0]?.id || null,
+  activeDrawerType: null,
+  activeDrawerEntityId: null,
+  activeDrawerIsNew: false,
+  hasUnsavedChanges: false,
   selectedTemplateId: db.timetableTemplates[0]?.id || null,
   selectedRunId: db.scheduleRuns[0]?.id || null,
   selectedSolutionId: db.scheduleSolutions[0]?.id || null,
@@ -23,6 +27,7 @@ init();
 
 function init() {
   bindShellActions();
+  bindGlobalEvents();
   ensureSelections();
   render();
 }
@@ -47,15 +52,26 @@ function ensureSelections() {
   if (!db.timetableTemplates.find((item) => item.id === ui.selectedTemplateId)) ui.selectedTemplateId = db.timetableTemplates[0]?.id || null;
   if (!db.teachers.find((item) => item.id === ui.selectedTeacherId)) ui.selectedTeacherId = db.teachers[0]?.id || null;
   if (!db.students.find((item) => item.id === ui.selectedStudentId)) ui.selectedStudentId = db.students[0]?.id || null;
+  if (ui.activeDrawerType === "teacher" && !db.teachers.find((item) => item.id === ui.activeDrawerEntityId)) clearDrawerState();
+  if (ui.activeDrawerType === "student" && !db.students.find((item) => item.id === ui.activeDrawerEntityId)) clearDrawerState();
   if (!db.scheduleRuns.find((item) => item.id === ui.selectedRunId)) ui.selectedRunId = db.scheduleRuns[0]?.id || null;
   if (!db.scheduleSolutions.find((item) => item.id === ui.selectedSolutionId)) ui.selectedSolutionId = db.scheduleSolutions[0]?.id || null;
 }
 
 function render() {
   ensureSelections();
+  syncBodyScrollLock();
   renderSidebar();
   renderNav();
   renderPage();
+}
+
+function bindGlobalEvents() {
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !ui.activeDrawerType) return;
+    event.preventDefault();
+    requestCloseDrawer();
+  });
 }
 
 function renderSidebar() {
@@ -112,7 +128,8 @@ function renderPage() {
 }
 
 function renderTeachersPage() {
-  const selected = db.teachers.find((item) => item.id === ui.selectedTeacherId);
+  const drawerTeacherId = ui.activeDrawerType === "teacher" ? ui.activeDrawerEntityId : null;
+  const selected = db.teachers.find((item) => item.id === drawerTeacherId);
   const teachers = filteredTeachers();
   return `
     <div class="stack">
@@ -141,7 +158,8 @@ function renderTeachersPage() {
 }
 
 function renderStudentsPage() {
-  const selected = db.students.find((item) => item.id === ui.selectedStudentId);
+  const drawerStudentId = ui.activeDrawerType === "student" ? ui.activeDrawerEntityId : null;
+  const selected = db.students.find((item) => item.id === drawerStudentId);
   const students = filteredStudents();
   return `
     <div class="stack">
@@ -833,11 +851,19 @@ function renderAssignmentMatrix(assignments) {
 }
 
 function bindPageEvents() {
-  document.querySelectorAll("[data-select-teacher]").forEach((button) => button.addEventListener("click", () => { ui.selectedTeacherId = button.dataset.selectTeacher; render(); }));
-  document.querySelectorAll("[data-select-student]").forEach((button) => button.addEventListener("click", () => { ui.selectedStudentId = button.dataset.selectStudent; render(); }));
+  document.querySelectorAll("[data-select-teacher]").forEach((button) => button.addEventListener("click", () => {
+    openDrawer("teacher", button.dataset.selectTeacher, false);
+  }));
+  document.querySelectorAll("[data-select-student]").forEach((button) => button.addEventListener("click", () => {
+    openDrawer("student", button.dataset.selectStudent, false);
+  }));
   document.querySelectorAll("[data-select-solution]").forEach((button) => button.addEventListener("click", () => { ui.selectedSolutionId = button.dataset.selectSolution; render(); }));
   document.getElementById("teacherForm")?.addEventListener("submit", saveTeacher);
   document.getElementById("studentForm")?.addEventListener("submit", saveStudent);
+  document.getElementById("teacherForm")?.addEventListener("input", markDrawerDirty);
+  document.getElementById("teacherForm")?.addEventListener("change", markDrawerDirty);
+  document.getElementById("studentForm")?.addEventListener("input", markDrawerDirty);
+  document.getElementById("studentForm")?.addEventListener("change", markDrawerDirty);
   document.querySelectorAll("[data-filter-target]").forEach((control) => {
     const eventName = control.type === "text" || control.tagName === "INPUT" && control.type !== "checkbox" ? "input" : "change";
     control.addEventListener(eventName, () => updateFilter(control));
@@ -878,8 +904,9 @@ function bindPageEvents() {
   }));
   document.querySelectorAll("[data-drawer-close]").forEach((node) => node.addEventListener("click", (event) => {
     if (event.target !== node) return;
-    handleAction(node.dataset.drawerClose, {});
+    requestCloseDrawer();
   }));
+  document.querySelectorAll("[data-drawer-panel]").forEach((panel) => panel.addEventListener("click", (event) => event.stopPropagation()));
 }
 
 function bindActions() {
@@ -888,16 +915,10 @@ function bindActions() {
 
 function handleAction(action, payload) {
   if (action === "add-teacher") return addTeacher();
-  if (action === "close-teacher-drawer") {
-    ui.selectedTeacherId = null;
-    return render();
-  }
+  if (action === "close-teacher-drawer") return requestCloseDrawer();
   if (action === "delete-teacher") return removeTeacher(payload.id);
   if (action === "add-student") return addStudent();
-  if (action === "close-student-drawer") {
-    ui.selectedStudentId = null;
-    return render();
-  }
+  if (action === "close-student-drawer") return requestCloseDrawer();
   if (action === "delete-student") return removeStudent(payload.id);
   if (action === "clear-teacher-filters") return clearTeacherFilters();
   if (action === "clear-student-filters") return clearStudentFilters();
@@ -948,6 +969,10 @@ function addTeacher() {
   const teacher = createEmptyTeacher();
   db.teachers.unshift(teacher);
   ui.selectedTeacherId = teacher.id;
+  ui.activeDrawerType = "teacher";
+  ui.activeDrawerEntityId = teacher.id;
+  ui.activeDrawerIsNew = true;
+  ui.hasUnsavedChanges = false;
   persist();
   render();
 }
@@ -956,6 +981,10 @@ function addStudent() {
   const student = createEmptyStudent();
   db.students.unshift(student);
   ui.selectedStudentId = student.id;
+  ui.activeDrawerType = "student";
+  ui.activeDrawerEntityId = student.id;
+  ui.activeDrawerIsNew = true;
+  ui.hasUnsavedChanges = false;
   persist();
   render();
 }
@@ -983,7 +1012,9 @@ function saveTeacher(event) {
     db.teacherSubjects.push({ id: uid("teacher-subject"), teacherId: teacher.id, subjectId: input.value });
   });
   persist();
-  render();
+  ui.hasUnsavedChanges = false;
+  ui.activeDrawerIsNew = false;
+  closeDrawer();
 }
 
 function saveStudent(event) {
@@ -1017,7 +1048,9 @@ function saveStudent(event) {
   syncStudentLessonRequests(student.id, selectedSubjectIds, preferredTeacherIds, blockedTeacherIds, preferredGenders[0] || null);
   rebuildStudentSubjectRequests(student.id, selectedSubjectIds);
   persist();
-  render();
+  ui.hasUnsavedChanges = false;
+  ui.activeDrawerIsNew = false;
+  closeDrawer();
 }
 
 function removeTeacher(id) {
@@ -1630,6 +1663,81 @@ function deleteLessonRequest(lessonRequestId) {
   rebuildStudentSubjectRequests(request.studentId);
   persist();
   render();
+}
+
+function openDrawer(type, entityId, isNew = false) {
+  const isSwitching = ui.activeDrawerType && (ui.activeDrawerType !== type || ui.activeDrawerEntityId !== entityId);
+  if (isSwitching && ui.hasUnsavedChanges) {
+    const ok = window.confirm("保存していない変更があります。切り替えますか？");
+    if (!ok) return;
+    discardUnsavedNewDrawerRecord();
+  }
+  if (type === "teacher") ui.selectedTeacherId = entityId;
+  if (type === "student") ui.selectedStudentId = entityId;
+  ui.activeDrawerType = type;
+  ui.activeDrawerEntityId = entityId;
+  ui.activeDrawerIsNew = Boolean(isNew);
+  ui.hasUnsavedChanges = false;
+  render();
+}
+
+function markDrawerDirty() {
+  if (!ui.activeDrawerType) return;
+  ui.hasUnsavedChanges = true;
+}
+
+function requestCloseDrawer() {
+  if (!ui.activeDrawerType) return;
+  if (ui.hasUnsavedChanges) {
+    const ok = window.confirm("保存していない変更があります。閉じますか？");
+    if (!ok) return;
+  }
+  closeDrawer();
+}
+
+function closeDrawer() {
+  discardUnsavedNewDrawerRecord();
+  clearDrawerState();
+  render();
+}
+
+function clearDrawerState() {
+  ui.activeDrawerType = null;
+  ui.activeDrawerEntityId = null;
+  ui.activeDrawerIsNew = false;
+  ui.hasUnsavedChanges = false;
+  syncBodyScrollLock();
+}
+
+function discardUnsavedNewDrawerRecord() {
+  if (!ui.activeDrawerIsNew || !ui.activeDrawerEntityId) return;
+  if (ui.activeDrawerType === "teacher") {
+    const teacherId = ui.activeDrawerEntityId;
+    db.teachers = db.teachers.filter((item) => item.id !== teacherId);
+    db.teacherSubjects = db.teacherSubjects.filter((item) => item.teacherId !== teacherId);
+    db.teacherAvailabilitySlots = db.teacherAvailabilitySlots.filter((item) => item.teacherId !== teacherId);
+    db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.teacherId !== teacherId);
+    db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.teacherId !== teacherId);
+    db = saveDb(db);
+    if (ui.selectedTeacherId === teacherId) ui.selectedTeacherId = db.teachers[0]?.id || null;
+  }
+  if (ui.activeDrawerType === "student") {
+    const studentId = ui.activeDrawerEntityId;
+    db.students = db.students.filter((item) => item.id !== studentId);
+    db.studentAvailabilitySlots = db.studentAvailabilitySlots.filter((item) => item.studentId !== studentId);
+    db.studentSubjectRequests = db.studentSubjectRequests.filter((item) => item.studentId !== studentId);
+    db.lessonRequests = db.lessonRequests.filter((item) => item.studentId !== studentId);
+    db.confirmedAssignments = db.confirmedAssignments.filter((item) => item.studentId !== studentId);
+    db.studentTeacherPreferences = db.studentTeacherPreferences.filter((item) => item.studentId !== studentId);
+    db.studentGenderPreferences = db.studentGenderPreferences.filter((item) => item.studentId !== studentId);
+    db.currentLessonAssignments = db.currentLessonAssignments.filter((item) => item.studentId !== studentId);
+    db = saveDb(db);
+    if (ui.selectedStudentId === studentId) ui.selectedStudentId = db.students[0]?.id || null;
+  }
+}
+
+function syncBodyScrollLock() {
+  document.body.classList.toggle("drawer-open", Boolean(ui.activeDrawerType));
 }
 
 function syncStudentLessonRequests(studentId, selectedSubjectIds, preferredTeacherIds, blockedTeacherIds, preferredGender) {
