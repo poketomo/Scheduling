@@ -3,11 +3,11 @@ export const LEGACY_STORAGE_KEY = "scheduling-mvp-state-v1";
 export const SCHEMA_VERSION = 2;
 
 export const tabs = [
-  { id: "teachers", label: "講師一覧・追加編集" },
-  { id: "students", label: "生徒一覧・追加編集" },
-  { id: "slots", label: "時間割設定" },
-  { id: "generator", label: "自動生成" },
-  { id: "results", label: "生成結果確認" }
+  { id: "teachers", label: "講師" },
+  { id: "students", label: "生徒" },
+  { id: "slots", label: "授業時間" },
+  { id: "generator", label: "日程案を作成" },
+  { id: "results", label: "作成結果" }
 ];
 
 export const weekdays = ["月", "火", "水", "木", "金", "土", "日"];
@@ -30,15 +30,15 @@ export const confirmedAssignmentStatus = {
 };
 
 export const reasonLabels = {
-  NO_STUDENT_AVAILABILITY: "生徒の可能時間がありません",
-  NO_SUBJECT_REQUEST: "希望教科が設定されていません",
-  NO_TEACHER_FOR_SUBJECT: "希望教科に対応できる講師がいません",
-  NO_COMMON_TIME_SLOT: "講師と生徒の共通可能時間がありません",
-  ONLY_BLOCKED_TEACHERS_AVAILABLE: "可能な講師が希望しない講師のみです",
-  TEACHER_SLOT_CAPACITY_FULL: "講師枠の上限に達しています",
-  STUDENT_TIME_CONFLICT: "生徒の他授業と時間が衝突しています",
-  LOCKED_ASSIGNMENT_CONFLICT: "固定済みまたは確定済み授業と衝突しています",
-  UNKNOWN: "割当不可の理由を特定できません"
+  NO_STUDENT_AVAILABILITY: "生徒の参加できる時間がまだ足りません",
+  NO_SUBJECT_REQUEST: "教科の希望が見つかりません",
+  NO_TEACHER_FOR_SUBJECT: "この教科を担当できる講師がいません",
+  NO_COMMON_TIME_SLOT: "講師と生徒の時間が重なる枠がありません",
+  ONLY_BLOCKED_TEACHERS_AVAILABLE: "空いている講師がすべて NG 講師です",
+  TEACHER_SLOT_CAPACITY_FULL: "その時間は講師の受け持ち上限に達しています",
+  STUDENT_TIME_CONFLICT: "その時間には別の授業が入っています",
+  LOCKED_ASSIGNMENT_CONFLICT: "固定した予定とぶつかっています",
+  UNKNOWN: "条件に合う組み合わせが見つかりません"
 };
 
 export const scoreWeights = {

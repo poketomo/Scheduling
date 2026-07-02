@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>日程調整アプリ MVP</title>
+    <title>日程調整アプリ</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -11,27 +11,27 @@
       <aside class="sidebar">
         <div class="brand">
           <h1>日程調整</h1>
-          <p>講師・生徒マッチング</p>
+          <p>講師と生徒の予定を、迷わず整えるための5ステップ</p>
         </div>
         <nav id="navTabs" class="nav-tabs"></nav>
-        <section class="sidebar-panel">
-          <h2>保存状態</h2>
+        <section class="sidebar-panel compact">
+          <h2>保存状況</h2>
           <div id="saveStatus" class="save-status"></div>
         </section>
         <section class="sidebar-panel">
-          <h2>概要</h2>
+          <h2>現在の状況</h2>
           <dl id="summaryStats" class="stats-list"></dl>
         </section>
       </aside>
       <main class="main">
         <header class="page-header">
           <div>
-            <p class="eyebrow">Admin MVP</p>
-            <h2 id="pageTitle">講師一覧</h2>
+            <h2 id="pageTitle">講師</h2>
+            <p id="pageLead" class="page-lead"></p>
           </div>
           <div class="header-actions">
-            <button id="seedButton" class="secondary-btn" type="button">サンプル投入</button>
-            <button id="resetButton" class="danger-btn" type="button">データ初期化</button>
+            <button id="seedButton" class="secondary-btn" type="button">お試しデータを入れる</button>
+            <button id="resetButton" class="danger-btn" type="button">すべて削除</button>
           </div>
         </header>
         <section id="app" class="page-body"></section>

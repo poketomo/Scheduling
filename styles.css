@@ -897,3 +897,194 @@ textarea {
     padding: 16px;
   }
 }
+
+.nav-tab {
+  display: grid;
+  gap: 4px;
+}
+
+.nav-tab strong {
+  font-size: 14px;
+}
+
+.nav-step {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-panel.compact {
+  padding-bottom: 8px;
+}
+
+.stats-list > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.page-lead {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.status-text {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-text.success {
+  color: var(--success);
+}
+
+.status-text.warning {
+  color: var(--warning);
+}
+
+.status-text.muted {
+  color: var(--muted);
+}
+
+.layout-two.wide-right {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+}
+
+.action-empty .action-row.center {
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.emphasis-card {
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.details-card summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.details-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.details-card[open] summary {
+  margin-bottom: 14px;
+}
+
+.weekday-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.weekday-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--surface-alt);
+  display: grid;
+  gap: 10px;
+}
+
+.weekday-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weekday-card h5 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.availability-summary {
+  display: grid;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.tag.strong {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: #bfdbfe;
+}
+
+.availability-grid th {
+  padding: 8px;
+}
+
+.slot-cell {
+  color: var(--muted);
+  transition: background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.slot-cell.on {
+  box-shadow: inset 0 0 0 1px #93c5fd;
+}
+
+.slot-cell:hover {
+  background: #eff6ff;
+  color: var(--primary);
+}
+
+.slot-missing {
+  background: var(--surface-alt);
+}
+
+.day-toggle,
+.time-toggle {
+  width: 100%;
+  justify-content: center;
+}
+
+.checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.check-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+
+.check-item.done {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+.check-item.todo {
+  border-color: #fed7aa;
+  background: #fffaf0;
+}
+
+.check-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-weight: 800;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.result-view-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.active-tab {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: #bfdbfe;
+}
