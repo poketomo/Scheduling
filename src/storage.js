@@ -129,6 +129,19 @@ export function cloneLessonRequestRecord(request, overrides = {}) {
   };
 }
 
+export function updateConfirmedAssignment(db, assignmentId, changes = {}) {
+  const assignment = db.confirmedAssignments.find((item) => item.id === assignmentId);
+  if (!assignment) return null;
+  Object.assign(assignment, changes);
+  return assignment;
+}
+
+export function cancelConfirmedAssignment(db, assignmentId) {
+  return updateConfirmedAssignment(db, assignmentId, {
+    status: "cancelled"
+  });
+}
+
 export function dedupeDateAvailabilityRows(rows, ownerKey) {
   const list = Array.isArray(rows) ? rows : [];
   const seen = new Set();

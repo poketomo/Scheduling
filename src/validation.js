@@ -136,15 +136,25 @@ function validateConfirmedAssignments(db, issues) {
     if (!db.teacherSubjects.some((item) => item.teacherId === assignment.teacherId && item.subjectId === assignment.subjectId)) {
       issues.push("confirmedAssignments に講師対応外の教科が含まれています。");
     }
-    if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === assignment.timeSlotId)) {
-      issues.push("confirmedAssignments に講師可能時間外の割当があります。");
+    const isDateBased = Boolean(assignment.date && (assignment.lessonTimeSlotId || assignment.timeSlotId));
+    if (isDateBased) {
+      if (!db.teacherDateAvailability.some((item) => item.teacherId === assignment.teacherId && item.date === assignment.date && item.lessonTimeSlotId === (assignment.lessonTimeSlotId || assignment.timeSlotId))) {
+        issues.push("confirmedAssignments に講師可能日外の割当があります。");
+      }
+      if (!db.studentDateAvailability.some((item) => item.studentId === assignment.studentId && item.date === assignment.date && item.lessonTimeSlotId === (assignment.lessonTimeSlotId || assignment.timeSlotId))) {
+        issues.push("confirmedAssignments に生徒可能日外の割当があります。");
+      }
+    } else {
+      if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === assignment.timeSlotId)) {
+        issues.push("confirmedAssignments に講師可能時間外の割当があります。");
+      }
+      if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === assignment.timeSlotId)) {
+        issues.push("confirmedAssignments に生徒可能時間外の割当があります。");
+      }
     }
-    if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === assignment.timeSlotId)) {
-      issues.push("confirmedAssignments に生徒可能時間外の割当があります。");
-    }
-    const studentConflictKey = `${assignment.studentId}|${assignment.timeSlotId}|${assignment.status}`;
+    const studentConflictKey = `${assignment.studentId}|${assignment.date || ""}|${assignment.lessonTimeSlotId || assignment.timeSlotId}|${assignment.status}`;
     if (assignment.status === confirmedAssignmentStatus.confirmed && seen.has(studentConflictKey)) {
-      issues.push("同じ生徒が同じ timeSlotId に複数 confirmedAssignments を持っています。");
+      issues.push(isDateBased ? "同じ生徒が同じ日時に複数 confirmedAssignments を持っています。" : "同じ生徒が同じ timeSlotId に複数 confirmedAssignments を持っています。");
     }
     seen.add(studentConflictKey);
   }

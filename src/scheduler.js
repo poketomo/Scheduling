@@ -438,6 +438,92 @@ export function createConfirmedAssignmentsFromSolution(db, solutionId) {
   }));
 }
 
+export function buildAssignmentMoveOptions(db, assignments, assignment) {
+  const normalizedAssignment = normalizeInteractiveAssignment(db, assignment);
+  const occupancyAssignments = buildInteractiveOccupancy(db, assignments, assignment);
+  const request = db.lessonRequests.find((item) => item.id === normalizedAssignment.lessonRequestId);
+  if (!request) return [];
+
+  const teacher = db.teachers.find((item) => item.id === normalizedAssignment.teacherId);
+  if (!teacher || !getTeacherSubjectIds(db, teacher.id).includes(normalizedAssignment.subjectId)) return [];
+
+  const candidates = normalizedAssignment.date
+    ? getTeacherDateAvailability(db, teacher.id)
+      .map((row) => ({
+        ...buildCandidateBase(db, request, normalizedAssignment, teacher),
+        timeSlotId: row.lessonTimeSlotId,
+        lessonTimeSlotId: row.lessonTimeSlotId,
+        date: row.date,
+        dayOfWeek: dayOfWeekFromDate(row.date)
+      }))
+      .filter((candidate) => !sameDateSlot(candidate, normalizedAssignment))
+      .filter((candidate) => getStudentDateAvailability(db, normalizedAssignment.studentId).some((row) => row.date === candidate.date && row.lessonTimeSlotId === candidate.timeSlotId))
+    : getTeacherAvailability(db, teacher.id)
+      .map((timeSlotId) => ({
+        ...buildCandidateBase(db, request, normalizedAssignment, teacher),
+        timeSlotId,
+        lessonTimeSlotId: timeSlotId,
+        date: null,
+        dayOfWeek: getSlotDayOfWeek(db, timeSlotId)
+      }))
+      .filter((candidate) => candidate.timeSlotId !== normalizedAssignment.timeSlotId)
+      .filter((candidate) => getStudentAvailability(db, normalizedAssignment.studentId).includes(candidate.timeSlotId));
+
+  return candidates
+    .filter((candidate) => isFeasibleCandidate(occupancyAssignments, candidate, {}))
+    .map((candidate) => scoreAndShapeCandidate(db, candidate, occupancyAssignments, assignments.filter((item) => item.id !== assignment.id).map((item) => normalizeInteractiveAssignment(db, item)), 0))
+    .sort((a, b) =>
+      String(a.date || "").localeCompare(String(b.date || "")) ||
+      String(a.timeSlotId).localeCompare(String(b.timeSlotId)) ||
+      String(a.teacherId).localeCompare(String(b.teacherId))
+    );
+}
+
+export function buildTeacherChangeOptions(db, assignments, assignment) {
+  const normalizedAssignment = normalizeInteractiveAssignment(db, assignment);
+  const occupancyAssignments = buildInteractiveOccupancy(db, assignments, assignment);
+  const request = db.lessonRequests.find((item) => item.id === normalizedAssignment.lessonRequestId);
+  const blockedTeachers = new Set(request?.blockedTeacherIds || []);
+  const otherAssignments = assignments.filter((item) => item.id !== assignment.id).map((item) => normalizeInteractiveAssignment(db, item));
+  return db.teachers
+    .filter((teacher) => teacher.id !== normalizedAssignment.teacherId)
+    .filter((teacher) => !blockedTeachers.has(teacher.id))
+    .filter((teacher) => getTeacherSubjectIds(db, teacher.id).includes(normalizedAssignment.subjectId))
+    .filter((teacher) => normalizedAssignment.date
+      ? getTeacherDateAvailability(db, teacher.id).some((row) => row.date === normalizedAssignment.date && row.lessonTimeSlotId === normalizedAssignment.timeSlotId)
+      : getTeacherAvailability(db, teacher.id).includes(normalizedAssignment.timeSlotId))
+    .map((teacher) => ({
+      ...buildCandidateBase(db, request, normalizedAssignment, teacher),
+      timeSlotId: normalizedAssignment.timeSlotId,
+      lessonTimeSlotId: normalizedAssignment.timeSlotId,
+      date: normalizedAssignment.date || null,
+      dayOfWeek: normalizedAssignment.date ? dayOfWeekFromDate(normalizedAssignment.date) : normalizedAssignment.dayOfWeek
+    }))
+    .filter((candidate) => isFeasibleCandidate(occupancyAssignments, candidate, {}))
+    .map((candidate) => ({
+      ...scoreAndShapeCandidate(db, candidate, occupancyAssignments, otherAssignments, 0),
+      compatibilityScore: teacherCompatibilityValue(db, candidate.studentId, candidate.teacherId)
+    }))
+    .sort((a, b) => b.score - a.score || String(a.teacherId).localeCompare(String(b.teacherId)));
+}
+
+export function recalculateManualAssignment(db, assignments, assignment) {
+  const normalizedAssignment = normalizeInteractiveAssignment(db, assignment);
+  const otherAssignments = assignments.filter((item) => item.id !== assignment.id).map((item) => normalizeInteractiveAssignment(db, item));
+  const occupancyAssignments = getCommittedAssignments(db, { excludeConfirmedId: assignment.id }).concat(otherAssignments);
+  const request = db.lessonRequests.find((item) => item.id === normalizedAssignment.lessonRequestId);
+  const teacher = db.teachers.find((item) => item.id === normalizedAssignment.teacherId);
+  if (!request || !teacher) return normalizedAssignment;
+  const candidate = {
+    ...buildCandidateBase(db, request, normalizedAssignment, teacher),
+    timeSlotId: normalizedAssignment.timeSlotId,
+    lessonTimeSlotId: normalizedAssignment.timeSlotId,
+    date: normalizedAssignment.date || null,
+    dayOfWeek: normalizedAssignment.dayOfWeek
+  };
+  return scoreAndShapeCandidate(db, candidate, occupancyAssignments, otherAssignments, 0);
+}
+
 function scoreAndShapeCandidate(db, candidate, occupancyAssignments, resultAssignments, salt) {
   const sameTeacherSlotAssignments = occupancyAssignments.filter((item) => item.teacherId === candidate.teacherId && sameDateSlot(item, candidate));
   const requestAssignments = resultAssignments.filter((item) => item.lessonRequestId === candidate.lessonRequestId);
@@ -528,9 +614,10 @@ function buildInputSnapshot(db) {
   };
 }
 
-function getCommittedAssignments(db) {
+function getCommittedAssignments(db, options = {}) {
   return db.confirmedAssignments
     .filter((item) => item.status === confirmedAssignmentStatus.confirmed)
+    .filter((item) => item.id !== options.excludeConfirmedId)
     .map((item) => ({
       unitId: `confirmed:${item.id}`,
       lessonRequestId: item.lessonRequestId,
@@ -622,4 +709,53 @@ function slotSignature(assignment) {
 
 function sameDateSlot(left, right) {
   return slotSignature(left) === slotSignature(right);
+}
+
+function normalizeInteractiveAssignment(db, assignment) {
+  return {
+    id: assignment.id || null,
+    unitId: assignment.unitId || `${assignment.lessonRequestId || assignment.studentId}:${assignment.occurrenceIndex || 1}`,
+    lessonRequestId: assignment.lessonRequestId || null,
+    occurrenceIndex: assignment.occurrenceIndex || 1,
+    teacherId: assignment.teacherId,
+    studentId: assignment.studentId,
+    subjectId: assignment.subjectId,
+    timeSlotId: assignment.lessonTimeSlotId || assignment.timeSlotId,
+    lessonTimeSlotId: assignment.lessonTimeSlotId || assignment.timeSlotId,
+    date: assignment.date || null,
+    dayOfWeek: assignment.date ? dayOfWeekFromDate(assignment.date) : assignment.dayOfWeek || getSlotDayOfWeek(db, assignment.timeSlotId),
+    isLocked: Boolean(assignment.isLocked),
+    isCommitted: Boolean(assignment.isCommitted),
+    score: assignment.score || 0,
+    scoreBreakdown: assignment.scoreBreakdownJson || assignment.scoreBreakdown || []
+  };
+}
+
+function buildInteractiveOccupancy(db, assignments, assignment) {
+  return getCommittedAssignments(db, { excludeConfirmedId: assignment.id }).concat(
+    assignments
+      .filter((item) => item.id !== assignment.id)
+      .map((item) => normalizeInteractiveAssignment(db, item))
+  );
+}
+
+function buildCandidateBase(db, request, assignment, teacher) {
+  return {
+    unitId: assignment.unitId,
+    lessonRequestId: assignment.lessonRequestId,
+    occurrenceIndex: assignment.occurrenceIndex,
+    studentId: assignment.studentId,
+    subjectId: assignment.subjectId,
+    teacherId: teacher.id,
+    preferredTeacherIds: new Set(request?.preferredTeacherIds || []),
+    blockedTeacherIds: new Set(request?.blockedTeacherIds || []),
+    preferredGender: request?.preferredGender || null,
+    teacherGender: teacher.gender,
+    priority: request?.priority || 3
+  };
+}
+
+function teacherCompatibilityValue(db, studentId, teacherId) {
+  const value = Number(db.studentTeacherCompatibilities?.find((item) => item.studentId === studentId && item.teacherId === teacherId)?.score || 3);
+  return Number.isFinite(value) ? value : 3;
 }

@@ -1,7 +1,24 @@
 import { genders, tabs, weekdays, now, uid } from "./src/constants.js";
 import { buildSampleDb } from "./src/sampleData.js";
-import { createConfirmedAssignmentsFromSolution, generateScheduleSolutions, summarizeTeachers } from "./src/scheduler.js";
-import { cloneLessonRequestRecord, exportDb, importDb, loadDb, mergeDateAvailabilityRows, resetDb, saveDb } from "./src/storage.js";
+import {
+  buildAssignmentMoveOptions,
+  buildTeacherChangeOptions,
+  createConfirmedAssignmentsFromSolution,
+  generateScheduleSolutions,
+  recalculateManualAssignment,
+  summarizeTeachers
+} from "./src/scheduler.js";
+import {
+  cancelConfirmedAssignment,
+  cloneLessonRequestRecord,
+  exportDb,
+  importDb,
+  loadDb,
+  mergeDateAvailabilityRows,
+  resetDb,
+  saveDb,
+  updateConfirmedAssignment
+} from "./src/storage.js";
 import { generatorReadiness } from "./src/validation.js";
 
 let db = loadDb();
@@ -838,6 +855,10 @@ function renderSolutionDetail(solution) {
           `).join("")}</tbody>
         </table>
       </div>
+      <div class="card flat-card">
+        <h4 class="card-title">確定済み授業</h4>
+        ${renderConfirmedAssignmentsTable()}
+      </div>
     </div>
   `;
 }
@@ -997,6 +1018,10 @@ function handleAction(action, payload) {
   if (action === "regenerate-with-locks") return runScheduleGeneration(true);
   if (action === "move-assignment") return openMoveAssignmentModal(payload.id, payload.solutionId);
   if (action === "change-teacher") return openChangeTeacherModal(payload.id, payload.solutionId);
+  if (action === "cancel-confirmed") return cancelConfirmedLesson(payload.id);
+  if (action === "edit-confirmed-time") return openConfirmedMoveModal(payload.id);
+  if (action === "edit-confirmed-teacher") return openConfirmedTeacherModal(payload.id);
+  if (action === "edit-confirmed-memo") return openConfirmedMemoModal(payload.id);
   if (action === "export-db") return openTextExportModal();
   if (action === "import-db") return openTextImportModal();
 }
@@ -1420,36 +1445,25 @@ function confirmSolution(solutionId) {
 function openMoveAssignmentModal(assignmentId, solutionId) {
   const assignment = db.scheduleAssignments.find((item) => item.id === assignmentId);
   if (!assignment) return;
-  const solutionAssignments = scheduleAssignmentsForSolution(solutionId).filter((item) => item.id !== assignmentId);
-  const options = assignment.date
-    ? lessonTimeSlotOptions()
-      .filter((slot) => slot.id !== (assignment.lessonTimeSlotId || assignment.timeSlotId))
-      .filter((slot) => {
-        if (!db.teacherDateAvailability.some((item) => item.teacherId === assignment.teacherId && item.date === assignment.date && item.lessonTimeSlotId === slot.id)) return false;
-        if (!db.studentDateAvailability.some((item) => item.studentId === assignment.studentId && item.date === assignment.date && item.lessonTimeSlotId === slot.id)) return false;
-        if (solutionAssignments.filter((item) => item.teacherId === assignment.teacherId && item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === slot.id).length >= 3) return false;
-        if (solutionAssignments.some((item) => item.studentId === assignment.studentId && item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === slot.id)) return false;
-        return true;
-      })
-    : activeSlots().filter((slot) => slot.id !== assignment.timeSlotId).filter((slot) => {
-      if (!db.teacherAvailabilitySlots.some((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id)) return false;
-      if (!db.studentAvailabilitySlots.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
-      if (solutionAssignments.filter((item) => item.teacherId === assignment.teacherId && item.timeSlotId === slot.id).length >= 3) return false;
-      if (solutionAssignments.some((item) => item.studentId === assignment.studentId && item.timeSlotId === slot.id)) return false;
-      return true;
-    });
-  if (!options.length) return window.alert("移動可能な別枠がありません。");
+  const solutionAssignments = scheduleAssignmentsForSolution(solutionId);
+  const options = buildAssignmentMoveOptions(db, solutionAssignments, assignment);
+  if (!options.length) return openNoticeModal("移動できる候補がありません", "この授業を動かせる候補は見つかりませんでした。");
   openModal("生徒を別枠に移動", `
     <form id="moveAssignmentForm" class="stack">
       <input type="hidden" name="assignmentId" value="${assignment.id}" />
-      <label class="field"><span>移動先時間帯</span><select name="timeSlotId">${options.map((slot) => `<option value="${slot.id}">${escapeHtml(slot.label || slotTimeLabel(slot.id))}</option>`).join("")}</select></label>
+      <label class="field"><span>移動先候補</span><select name="optionKey">${options.map((option) => `<option value="${escapeAttr(moveOptionKey(option))}">${escapeHtml(moveOptionLabel(option))}</option>`).join("")}</select></label>
       <button class="primary-btn" type="submit">反映</button>
     </form>
   `, () => {
     document.getElementById("moveAssignmentForm").addEventListener("submit", (event) => {
       event.preventDefault();
-      assignment.timeSlotId = String(new FormData(event.currentTarget).get("timeSlotId"));
-      assignment.lessonTimeSlotId = assignment.timeSlotId;
+      const option = options.find((item) => moveOptionKey(item) === String(new FormData(event.currentTarget).get("optionKey") || ""));
+      if (!option) return;
+      assignment.timeSlotId = option.timeSlotId;
+      assignment.lessonTimeSlotId = option.lessonTimeSlotId || option.timeSlotId;
+      assignment.date = option.date || null;
+      assignment.dayOfWeek = option.dayOfWeek || null;
+      refreshAssignmentComputedFields(solutionAssignments, assignment);
       assignment.isLocked = true;
       persist();
       closeModal();
@@ -1462,32 +1476,34 @@ function openMoveAssignmentModal(assignmentId, solutionId) {
 function openChangeTeacherModal(assignmentId, solutionId) {
   const assignment = db.scheduleAssignments.find((item) => item.id === assignmentId);
   if (!assignment) return;
-  const blocked = db.studentTeacherPreferences.filter((item) => item.studentId === assignment.studentId && item.preferenceType === "blocked").map((item) => item.teacherId);
-  const solutionAssignments = scheduleAssignmentsForSolution(solutionId).filter((item) => item.id !== assignmentId);
-  const options = db.teachers
-    .filter((teacher) => teacher.id !== assignment.teacherId)
-    .filter((teacher) => !blocked.includes(teacher.id))
-    .filter((teacher) => db.teacherSubjects.some((item) => item.teacherId === teacher.id && item.subjectId === assignment.subjectId))
-    .filter((teacher) => assignment.date
-      ? db.teacherDateAvailability.some((item) => item.teacherId === teacher.id && item.date === assignment.date && item.lessonTimeSlotId === (assignment.lessonTimeSlotId || assignment.timeSlotId))
-      : db.teacherAvailabilitySlots.some((item) => item.teacherId === teacher.id && item.timeSlotId === assignment.timeSlotId))
-    .filter((teacher) => solutionAssignments.filter((item) =>
-      item.teacherId === teacher.id &&
-      (assignment.date
-        ? item.date === assignment.date && (item.lessonTimeSlotId || item.timeSlotId) === (assignment.lessonTimeSlotId || assignment.timeSlotId)
-        : item.timeSlotId === assignment.timeSlotId)
-    ).length < 3);
-  if (!options.length) return window.alert("変更可能な講師候補がありません。");
+  const solutionAssignments = scheduleAssignmentsForSolution(solutionId);
+  const options = buildTeacherChangeOptions(db, solutionAssignments, assignment);
+  if (!options.length) return openNoticeModal("変更できる講師候補がありません", "この日時で担当できる講師は見つかりませんでした。");
   openModal("講師を変更", `
     <form id="changeTeacherForm" class="stack">
       <input type="hidden" name="assignmentId" value="${assignment.id}" />
-      <label class="field"><span>変更先講師</span><select name="teacherId">${options.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></label>
+      <div class="list">
+        ${options.map((option, index) => `
+          <label class="option-card">
+            <input type="radio" name="teacherId" value="${option.teacherId}" ${index === 0 ? "checked" : ""} />
+            <div>
+              <strong>${escapeHtml(teacherName(option.teacherId))}</strong>
+              <div class="muted">${escapeHtml(subjectName(option.subjectId))} / ${escapeHtml(assignmentTimeLabel(option))}</div>
+              <div class="pill-row">
+                <span class="tag">相性: ${escapeHtml(compatibilityLabel(option.compatibilityScore))}</span>
+                <span class="tag">候補スコア ${option.score}</span>
+              </div>
+            </div>
+          </label>
+        `).join("")}
+      </div>
       <button class="primary-btn" type="submit">反映</button>
     </form>
   `, () => {
     document.getElementById("changeTeacherForm").addEventListener("submit", (event) => {
       event.preventDefault();
       assignment.teacherId = String(new FormData(event.currentTarget).get("teacherId"));
+      refreshAssignmentComputedFields(solutionAssignments, assignment);
       assignment.isLocked = true;
       persist();
       closeModal();
@@ -1495,6 +1511,97 @@ function openChangeTeacherModal(assignmentId, solutionId) {
       render();
     });
   });
+}
+
+function openConfirmedMoveModal(assignmentId) {
+  const assignment = db.confirmedAssignments.find((item) => item.id === assignmentId);
+  if (!assignment) return;
+  const options = buildAssignmentMoveOptions(db, db.confirmedAssignments, assignment);
+  if (!options.length) return openNoticeModal("移動できる候補がありません", "この授業を動かせる候補は見つかりませんでした。");
+  openModal("確定済み授業の日時変更", `
+    <form id="moveConfirmedForm" class="stack">
+      <label class="field"><span>移動先候補</span><select name="optionKey">${options.map((option) => `<option value="${escapeAttr(moveOptionKey(option))}">${escapeHtml(moveOptionLabel(option))}</option>`).join("")}</select></label>
+      <button class="primary-btn" type="submit">反映</button>
+    </form>
+  `, () => {
+    document.getElementById("moveConfirmedForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const option = options.find((item) => moveOptionKey(item) === String(new FormData(event.currentTarget).get("optionKey") || ""));
+      if (!option) return;
+      updateConfirmedAssignment(db, assignment.id, {
+        date: option.date || null,
+        timeSlotId: option.timeSlotId,
+        lessonTimeSlotId: option.lessonTimeSlotId || option.timeSlotId
+      });
+      persist();
+      closeModal();
+      render();
+    });
+  });
+}
+
+function openConfirmedTeacherModal(assignmentId) {
+  const assignment = db.confirmedAssignments.find((item) => item.id === assignmentId);
+  if (!assignment) return;
+  const options = buildTeacherChangeOptions(db, db.confirmedAssignments, assignment);
+  if (!options.length) return openNoticeModal("変更できる講師候補がありません", "この日時で担当できる講師は見つかりませんでした。");
+  openModal("確定済み授業の講師変更", `
+    <form id="changeConfirmedTeacherForm" class="stack">
+      <div class="list">
+        ${options.map((option, index) => `
+          <label class="option-card">
+            <input type="radio" name="teacherId" value="${option.teacherId}" ${index === 0 ? "checked" : ""} />
+            <div>
+              <strong>${escapeHtml(teacherName(option.teacherId))}</strong>
+              <div class="muted">${escapeHtml(subjectName(option.subjectId))} / ${escapeHtml(assignmentTimeLabel(option))}</div>
+              <div class="pill-row"><span class="tag">相性: ${escapeHtml(compatibilityLabel(option.compatibilityScore))}</span></div>
+            </div>
+          </label>
+        `).join("")}
+      </div>
+      <button class="primary-btn" type="submit">反映</button>
+    </form>
+  `, () => {
+    document.getElementById("changeConfirmedTeacherForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      updateConfirmedAssignment(db, assignment.id, {
+        teacherId: String(new FormData(event.currentTarget).get("teacherId") || assignment.teacherId)
+      });
+      persist();
+      closeModal();
+      render();
+    });
+  });
+}
+
+function openConfirmedMemoModal(assignmentId) {
+  const assignment = db.confirmedAssignments.find((item) => item.id === assignmentId);
+  if (!assignment) return;
+  openModal("確定済み授業のメモ", `
+    <form id="confirmedMemoForm" class="stack">
+      <label class="field"><span>メモ</span><textarea name="memo">${escapeHtml(assignment.memo || "")}</textarea></label>
+      <button class="primary-btn" type="submit">保存</button>
+    </form>
+  `, () => {
+    document.getElementById("confirmedMemoForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      updateConfirmedAssignment(db, assignment.id, {
+        memo: String(new FormData(event.currentTarget).get("memo") || "")
+      });
+      persist();
+      closeModal();
+      render();
+    });
+  });
+}
+
+function cancelConfirmedLesson(assignmentId) {
+  const assignment = db.confirmedAssignments.find((item) => item.id === assignmentId);
+  if (!assignment) return;
+  if (!window.confirm("この確定済み授業をキャンセルしますか？")) return;
+  cancelConfirmedAssignment(db, assignmentId);
+  persist();
+  render();
 }
 
 function openTextExportModal() {
@@ -2088,6 +2195,38 @@ function renderUnassignedCards(unassigned) {
   `;
 }
 
+function renderConfirmedAssignmentsTable() {
+  const items = [...db.confirmedAssignments].sort((a, b) =>
+    String(a.date || "").localeCompare(String(b.date || "")) ||
+    slotTimeLabel(a.lessonTimeSlotId || a.timeSlotId).localeCompare(slotTimeLabel(b.lessonTimeSlotId || b.timeSlotId)) ||
+    studentName(a.studentId).localeCompare(studentName(b.studentId))
+  );
+  if (!items.length) return `<div class="callout">まだ確定済み授業はありません。</div>`;
+  return `
+    <table class="assignments-table">
+      <thead><tr><th>生徒</th><th>講師</th><th>教科</th><th>日時</th><th>状態</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${items.map((item) => `
+        <tr>
+          <td>${escapeHtml(studentName(item.studentId))}</td>
+          <td>${escapeHtml(teacherName(item.teacherId))}</td>
+          <td>${escapeHtml(subjectName(item.subjectId))}</td>
+          <td>${escapeHtml(assignmentTimeLabel(item))}</td>
+          <td><span class="tag ${item.status === "cancelled" ? "subtle-danger" : ""}">${escapeHtml(item.status === "cancelled" ? "キャンセル" : "確定")}</span></td>
+          <td>${escapeHtml(item.memo || "メモなし")}</td>
+          <td>
+            <div class="action-row">
+              ${item.status === "confirmed" ? `<button class="ghost-btn" type="button" data-action="cancel-confirmed" data-id="${item.id}">キャンセル</button>` : ""}
+              <button class="ghost-btn" type="button" data-action="edit-confirmed-time" data-id="${item.id}">日時変更</button>
+              <button class="ghost-btn" type="button" data-action="edit-confirmed-teacher" data-id="${item.id}">講師変更</button>
+              <button class="ghost-btn" type="button" data-action="edit-confirmed-memo" data-id="${item.id}">メモ</button>
+            </div>
+          </td>
+        </tr>
+      `).join("")}</tbody>
+    </table>
+  `;
+}
+
 function unassignedHint(code) {
   const hintMap = {
     NO_STUDENT_AVAILABILITY: "生徒の通える時間を少し広げると候補が見つかりやすくなります。",
@@ -2296,6 +2435,16 @@ function renderSubjectCheckboxGroups(name, selectedIds = []) {
 
 function compatibilityOptions(selected) {
   return [1, 2, 3, 4, 5].map((value) => `<option value="${value}" ${Number(selected) === value ? "selected" : ""}>${value}</option>`).join("");
+}
+
+function compatibilityLabel(value) {
+  return {
+    1: "避けたい",
+    2: "やや避けたい",
+    3: "普通",
+    4: "合う",
+    5: "とても合う"
+  }[Number(value)] || "普通";
 }
 
 function studentTeacherCompatibility(studentId, teacherId) {
@@ -2583,6 +2732,24 @@ function slotTimeLabel(id) {
   return `${slot.startTime}-${slot.endTime}`;
 }
 
+function moveOptionKey(option) {
+  return `${option.teacherId}|${option.date || ""}|${option.lessonTimeSlotId || option.timeSlotId}`;
+}
+
+function moveOptionLabel(option) {
+  return `${assignmentTimeLabel(option)} / ${teacherName(option.teacherId)}`;
+}
+
+function refreshAssignmentComputedFields(solutionAssignments, assignment) {
+  const recalculated = recalculateManualAssignment(db, solutionAssignments, assignment);
+  assignment.score = recalculated.score;
+  assignment.scoreBreakdownJson = recalculated.scoreBreakdown;
+  assignment.date = recalculated.date || null;
+  assignment.dayOfWeek = recalculated.dayOfWeek || null;
+  assignment.lessonTimeSlotId = recalculated.lessonTimeSlotId || recalculated.timeSlotId;
+  assignment.timeSlotId = recalculated.timeSlotId;
+}
+
 function safeJson(text) {
   const value = String(text || "").trim();
   if (!value) return {};
@@ -2605,6 +2772,12 @@ function openModal(title, content, onReady) {
     if (event.target === node) closeModal();
   });
   if (onReady) onReady();
+}
+
+function openNoticeModal(title, message) {
+  openModal(title, `<div class="stack"><div class="callout">${escapeHtml(message)}</div><div class="action-row"><button class="ghost-btn" type="button" data-close-modal="true">閉じる</button></div></div>`, () => {
+    document.querySelector("[data-close-modal='true']")?.addEventListener("click", closeModal);
+  });
 }
 
 function closeModal() {
