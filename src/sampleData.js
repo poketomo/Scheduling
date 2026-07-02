@@ -3,9 +3,15 @@ import { createEmptyDb } from "./storage.js";
 
 export function buildSampleDb() {
   const db = createEmptyDb();
-  const [math, english, japanese] = db.subjects.map((item) => item.id);
-  const slots = db.timeSlots.filter((slot) => slot.isActive);
-  const [slot1, slot2, slot3, slot4, slot5, slot6] = slots;
+  const math = db.subjects.find((item) => item.name === "数学" && item.stage === "middle")?.id || db.subjects[0]?.id;
+  const english = db.subjects.find((item) => item.name === "英語" && item.stage === "middle")?.id || db.subjects[1]?.id;
+  const japanese = db.subjects.find((item) => item.name === "国語" && item.stage === "middle")?.id || db.subjects[2]?.id;
+  const slot1 = findSlot(db, 1, "16:00", "17:30");
+  const slot2 = findSlot(db, 1, "17:40", "19:10");
+  const slot3 = findSlot(db, 2, "16:00", "17:30");
+  const slot4 = findSlot(db, 2, "17:40", "19:10");
+  const slot5 = findSlot(db, 3, "16:00", "17:30");
+  const slot6 = findSlot(db, 3, "17:40", "19:10");
 
   const teachers = [
     teacher("佐藤先生", "female"),
@@ -181,4 +187,8 @@ function addStudentSubject(db, studentId, subjectId, priority) {
     subjectId,
     priority
   });
+}
+
+function findSlot(db, dayOfWeek, startTime, endTime) {
+  return db.timeSlots.find((slot) => slot.dayOfWeek === dayOfWeek && slot.startTime === startTime && slot.endTime === endTime);
 }

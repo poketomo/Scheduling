@@ -33,6 +33,7 @@ export function migrateLegacyState(rawValue) {
     studentAvailabilitySlots: arrayOrEmpty(legacy.studentAvailabilitySlots),
     studentSubjectRequests: arrayOrEmpty(legacy.studentSubjectRequests),
     studentTeacherPreferences: arrayOrEmpty(legacy.studentTeacherPreferences),
+    studentTeacherCompatibilities: arrayOrEmpty(legacy.studentTeacherCompatibilities),
     studentGenderPreferences: arrayOrEmpty(legacy.studentGenderPreferences),
     currentLessonAssignments: arrayOrEmpty(legacy.currentLessonAssignments),
     lessonRequests: arrayOrEmpty(legacy.lessonRequests),
@@ -44,6 +45,7 @@ export function migrateLegacyState(rawValue) {
   if (!db.lessonRequests.length) {
     db.lessonRequests = createLessonRequestsFromStudentSubjectRequests(db);
   }
+  db.subjects = ensureSubjectCatalog(db.subjects);
   return db;
 }
 
@@ -53,9 +55,16 @@ export function defaultTemplates(templateId = uid("template")) {
 
 export function defaultSubjects() {
   return [
-    { id: uid("subject"), name: "数学", sortOrder: 1, isActive: true },
-    { id: uid("subject"), name: "英語", sortOrder: 2, isActive: true },
-    { id: uid("subject"), name: "国語", sortOrder: 3, isActive: true }
+    { id: uid("subject"), name: "国語", stage: "middle", sortOrder: 1, isActive: true },
+    { id: uid("subject"), name: "数学", stage: "middle", sortOrder: 2, isActive: true },
+    { id: uid("subject"), name: "理科", stage: "middle", sortOrder: 3, isActive: true },
+    { id: uid("subject"), name: "社会", stage: "middle", sortOrder: 4, isActive: true },
+    { id: uid("subject"), name: "英語", stage: "middle", sortOrder: 5, isActive: true },
+    { id: uid("subject"), name: "国語", stage: "high", sortOrder: 6, isActive: true },
+    { id: uid("subject"), name: "数学", stage: "high", sortOrder: 7, isActive: true },
+    { id: uid("subject"), name: "理科", stage: "high", sortOrder: 8, isActive: true },
+    { id: uid("subject"), name: "社会", stage: "high", sortOrder: 9, isActive: true },
+    { id: uid("subject"), name: "英語", stage: "high", sortOrder: 10, isActive: true }
   ];
 }
 
@@ -63,7 +72,9 @@ export function defaultTimeSlots(templateId) {
   const windows = [
     ["16:00", "17:30"],
     ["17:40", "19:10"],
-    ["19:20", "20:50"]
+    ["19:20", "20:50"],
+    ["19:00", "20:20"],
+    ["19:00", "19:50"]
   ];
   return weekdays.flatMap((day, dayIndex) =>
     windows.map((window, index) => ({
@@ -72,7 +83,7 @@ export function defaultTimeSlots(templateId) {
       dayOfWeek: dayIndex + 1,
       startTime: window[0],
       endTime: window[1],
-      label: `${day} ${window[0]}-${window[1]}`,
+      label: `${window[0]}-${window[1]}`,
       sortOrder: dayIndex * windows.length + index + 1,
       isActive: true
     }))
@@ -157,4 +168,24 @@ function arrayOrEmpty(value) {
 
 export function removeLegacyStorage() {
   localStorage.removeItem(LEGACY_STORAGE_KEY);
+}
+
+export function ensureSubjectCatalog(subjects) {
+  const existing = arrayOrEmpty(subjects);
+  const next = [...existing];
+  for (const subject of defaultSubjects()) {
+    const hasSameSubject = next.some((item) => item.name === subject.name && (item.stage || inferStage(item.sortOrder)) === subject.stage);
+    if (!hasSameSubject) next.push(subject);
+  }
+  return next
+    .map((item, index) => ({
+      ...item,
+      stage: item.stage || inferStage(item.sortOrder),
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index + 1
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function inferStage(sortOrder) {
+  return Number(sortOrder) > 5 ? "high" : "middle";
 }

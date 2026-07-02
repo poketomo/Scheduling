@@ -703,6 +703,29 @@ textarea {
   flex-wrap: wrap;
 }
 
+.subject-group {
+  display: grid;
+  gap: 10px;
+}
+
+.subject-group-title {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.compatibility-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.inset-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+  padding: 14px;
+}
+
 .request-memo {
   min-height: 42px;
   padding: 10px 12px;

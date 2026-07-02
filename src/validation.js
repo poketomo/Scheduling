@@ -20,13 +20,14 @@ export function validateDb(db) {
 
 export function generatorReadiness(db) {
   const issues = [];
+  const activeRequestStudentIds = new Set(db.lessonRequests.filter((request) => request.status === "active").map((request) => request.studentId));
   if (!db.timeSlots.some((slot) => slot.isActive)) issues.push("有効な時間割スロットがありません。");
   if (!db.teachers.length) issues.push("講師が未登録です。");
   if (!db.students.length) issues.push("生徒が未登録です。");
   if (db.teachers.some((teacher) => !String(teacher.name || "").trim())) issues.push("名前未入力の講師がいます。");
   if (db.students.some((student) => !String(student.name || "").trim())) issues.push("名前未入力の生徒がいます。");
   if (db.teachers.some((teacher) => !db.teacherSubjects.some((item) => item.teacherId === teacher.id))) issues.push("対応教科未設定の講師がいます。");
-  if (db.students.some((student) => !db.studentAvailabilitySlots.some((item) => item.studentId === student.id))) issues.push("可能時間未設定の生徒がいます。");
+  if ([...activeRequestStudentIds].some((studentId) => !db.studentAvailabilitySlots.some((item) => item.studentId === studentId))) issues.push("可能時間未設定の生徒がいます。");
   if (db.lessonRequests.filter((request) => request.status === "active").length === 0) issues.push("有効な受講希望がありません。");
   issues.push(...validateDb(db));
   return [...new Set(issues)];
@@ -69,6 +70,7 @@ function validateReferences(db, issues) {
   validateRefTable(db.studentAvailabilitySlots, ["studentId", "timeSlotId"], sets, issues, "studentAvailabilitySlots");
   validateRefTable(db.studentSubjectRequests, ["studentId", "subjectId"], sets, issues, "studentSubjectRequests");
   validateRefTable(db.studentTeacherPreferences, ["studentId", "teacherId"], sets, issues, "studentTeacherPreferences");
+  validateRefTable(db.studentTeacherCompatibilities || [], ["studentId", "teacherId"], sets, issues, "studentTeacherCompatibilities");
   validateRefTable(db.currentLessonAssignments, ["teacherId", "studentId", "subjectId", "timeSlotId"], sets, issues, "currentLessonAssignments");
   validateRefTable(db.scheduleAssignments, ["scheduleSolutionId", "teacherId", "studentId", "subjectId", "timeSlotId"], sets, issues, "scheduleAssignments");
 }
@@ -128,6 +130,7 @@ function validateDuplicates(db, issues) {
   assertUnique(db.studentAvailabilitySlots, ["studentId", "timeSlotId"], issues, "studentAvailabilitySlots");
   assertUnique(db.studentSubjectRequests, ["studentId", "subjectId"], issues, "studentSubjectRequests");
   assertUnique(db.studentTeacherPreferences, ["studentId", "teacherId", "preferenceType"], issues, "studentTeacherPreferences");
+  assertUnique(db.studentTeacherCompatibilities || [], ["studentId", "teacherId"], issues, "studentTeacherCompatibilities");
 }
 
 function validateLockedAssignments(db, issues) {

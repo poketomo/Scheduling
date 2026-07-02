@@ -1,6 +1,7 @@
 import { LEGACY_STORAGE_KEY, SCHEMA_VERSION, STORAGE_KEY, now, uid } from "./constants.js";
 import {
   createLessonRequestsFromStudentSubjectRequests,
+  ensureSubjectCatalog,
   defaultSubjects,
   defaultTemplates,
   defaultTimeSlots,
@@ -25,6 +26,7 @@ export function createEmptyDb() {
     studentAvailabilitySlots: [],
     studentSubjectRequests: [],
     studentTeacherPreferences: [],
+    studentTeacherCompatibilities: [],
     studentGenderPreferences: [],
     currentLessonAssignments: [],
     lessonRequests: [],
@@ -59,6 +61,7 @@ export function ensureDbShape(db) {
   }
 
   merged.confirmedAssignments = normalizeConfirmedAssignments(merged.confirmedAssignments);
+  merged.subjects = ensureSubjectCatalog(merged.subjects);
   if (!merged.lessonRequests.length && merged.studentSubjectRequests.length) {
     merged.lessonRequests = createLessonRequestsFromStudentSubjectRequests(merged);
   }

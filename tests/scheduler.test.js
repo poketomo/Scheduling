@@ -9,7 +9,7 @@ import {
   generateScheduleSolutions
 } from "../src/scheduler.js";
 import { scoreCandidate } from "../src/scoring.js";
-import { cloneLessonRequestRecord } from "../src/storage.js";
+import { cloneLessonRequestRecord, createEmptyDb } from "../src/storage.js";
 
 function firstSolution(db, options = {}) {
   const result = generateScheduleSolutions(db, { candidateCount: 3, ...options });
@@ -319,4 +319,24 @@ test("lessonsPerWeek の変更が生成ユニット数に反映される", () =>
   request.lessonsPerWeek = 3;
   const units = buildLessonRequestUnits(db).filter((item) => item.lessonRequestId === request.id);
   assert.equal(units.length, 3);
+});
+
+test("授業希望がない生徒は生成対象外になる", () => {
+  const db = buildSampleDb();
+  const studentId = "student-no-request";
+  db.students.push({ id: studentId, name: "希望なし生徒", supportLevel: 3, memo: "", extraJson: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const result = generateScheduleSolutions(db, { candidateCount: 1 });
+  assert.equal(result.assignments.some((item) => item.studentId === studentId), false);
+});
+
+test("初期教科は10件ある", () => {
+  const db = createEmptyDb();
+  assert.equal(db.subjects.length, 10);
+});
+
+test("重複する開始時刻の時間帯を初期化できる", () => {
+  const db = createEmptyDb();
+  const sameStart = db.timeSlots.filter((slot) => slot.startTime === "19:00").map((slot) => slot.endTime);
+  assert.equal(sameStart.includes("20:20"), true);
+  assert.equal(sameStart.includes("19:50"), true);
 });
